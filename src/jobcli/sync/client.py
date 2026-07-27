@@ -11,14 +11,16 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_WBL_API_BASE = "https://api.whitebox-learning.com/api"
 
-# Hardcoded API base URL candidates tried automatically in order. The first one
-# that authenticates wins and is cached in local config. The user is never
-# prompted for an API base URL.
-#
-# Only the production WBL API is probed.
-WBL_API_CANDIDATES: tuple[str, ...] = (
+# Candidate URLs for probing the API when the saved config is missing/invalid.
+# Probed in order — local dev should ideally be overridden via `wboxcli config`,
+# but `login` will test these sequentially if no config is present.
+# NOTE: whitebox-learning.com is the Next.js frontend; the FastAPI backend
+# is deployed on the api.whitebox-learning.com subdomain.
+WBL_API_CANDIDATES = [
     "https://api.whitebox-learning.com/api",
-)
+    "http://localhost:8000/api",
+    "http://127.0.0.1:8000/api",
+]
 
 
 def _looks_like_missing_cli_window(response: Optional[requests.Response]) -> bool:

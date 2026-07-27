@@ -1,4 +1,13 @@
-"""Resolve empty form gaps from resume JSON and persisted field memory."""
+"""Resolve empty form gaps from resume JSON and persisted field memory.
+
+Memory is used as a *context provider* for the LLM (suggested_value hints,
+gap_hints block) — NOT as an autonomous form filler.
+
+Set ``MEMORY_PREFILL_DISABLED = True`` (default) to prevent ``gaps_to_actions``
+from generating browser fill actions.  This stops memory-sourced wrong values
+from being written into fields before the LLM has a chance to plan, which was
+the root cause of the "LLM not filling fields correctly" bug.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +25,14 @@ from jobcli.profile.schemas import (
     SelectorType,
 )
 from jobcli.utils.fill_guard import is_reserved_form_value
+
+# ── Master kill-switch for autonomous memory-based form filling ────────────
+# When True, ``gaps_to_actions`` returns an empty action list immediately.
+# Memory lookups for the LLM (``enrich_gaps_with_suggestions``,
+# ``build_gap_hints``) are NOT affected — the LLM still receives memory
+# suggestions as context hints via the KNOWN ANSWERS / TARGET GAPS blocks.
+# Set to False only if you want to re-enable experimental memory auto-fill.
+MEMORY_PREFILL_DISABLED: bool = True
 
 _DROPDOWN_ROLES = frozenset(
     {"combobox", "listbox", "select", "menu", "menuitemradio"}
@@ -112,7 +129,19 @@ class MemoryPrefiller:
         ats_type: ATSType,
         common_questions: Optional[CommonQuestions] = None,
     ) -> tuple[list[BrowserAction], list[GapResolution]]:
-        """Convert empty gaps into executable BrowserAction list."""
+        """Convert empty gaps into executable BrowserAction list.
+
+        DISABLED when ``MEMORY_PREFILL_DISABLED=True`` (default).
+
+        Memory-sourced values are unreliable as autonomous fills: the label
+        matching is approximate and the confidence gate (0.6) is too low,
+        causing incorrect values to be written into fields before the LLM
+        plans.  The LLM already receives memory as context via
+        ``enrich_gaps_with_suggestions`` and ``build_gap_hints`` — those
+        paths remain active.
+        """
+        if MEMORY_PREFILL_DISABLED:
+            return [], []
         actions: list[BrowserAction] = []
         resolutions: list[GapResolution] = []
 

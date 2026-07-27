@@ -14,16 +14,24 @@ def send_daily_report(sync_server_url: str, mock: bool = False):
     """Fetch today's stats from the backend and send an email using CLI's .env credentials."""
 
     # Load CLI project's .env file dynamically.
-    # Try 4 levels up (installed package layout: src/jobcli/analytics/report_mailer.py)
-    # then 3 levels up (editable / source layout), then plain load_dotenv() as last resort.
-    pkg_dir = Path(__file__).resolve().parent.parent.parent.parent
-    env_path = pkg_dir / ".env"
-    if not env_path.exists():
-        # Editable install / source layout: src/jobcli/analytics → project root is 3 levels up
-        env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=True)
-    else:
+    # Check multiple candidate paths in priority order:
+    #   1. Current working directory (where the user ran wboxcli from)
+    #   2. 4 levels up from this file (installed layout: ~/.jobcli/src/src/jobcli/analytics/)
+    #   3. 3 levels up from this file (editable/source layout: src/jobcli/analytics/)
+    #   4. plain load_dotenv() as last resort (picks up shell environment)
+    candidates = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parent.parent.parent.parent / ".env",
+        Path(__file__).resolve().parent.parent.parent.parent.parent / ".env",
+        Path(__file__).resolve().parent.parent.parent / ".env",
+    ]
+    loaded = False
+    for env_path in candidates:
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path, override=True)
+            loaded = True
+            break
+    if not loaded:
         load_dotenv(override=True)
 
     # 1. Fetch data from Backend

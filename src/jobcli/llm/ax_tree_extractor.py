@@ -470,28 +470,28 @@ class AccessibilityTreeExtractor:
 
     def _detect_dropdown_fields(self) -> list[dict[str, Any]]:
         """Find all dropdown/select fields and pre-extract their options from the DOM.
-        
-        This explores native <select> elements and custom ARIA combobox/listbox
-        elements to provide options *before* the LLM decides.
+
+        For native ``<select>`` elements, options are read directly.
+        For custom ARIA comboboxes (Greenhouse react-select, etc.), options are
+        extracted via JS without opening the dropdown — react-select renders a
+        hidden ``<div role='listbox'>`` or ``<div role='option'>`` tree that is
+        accessible even when the dropdown is closed.
         """
         dropdowns = []
-        
-        # We need to look in both the main document and any iframes
+
         frames_to_check = [self.page.main_frame] + self.page.frames
-        
+
         for frame in frames_to_check:
             try:
-                # 1. Native <select> elements
-                select_locators = frame.locator("select").all()
-                for sel in select_locators:
+                # 1. Native <select> elements — always fully readable
+                for sel in frame.locator("select").all():
                     try:
                         label = self._find_label_for_element(sel, frame)
-                        options = []
-                        for opt in sel.locator("option").all():
-                            text = opt.text_content()
-                            if text and text.strip():
-                                options.append(text.strip())
-                        
+                        options = [
+                            t.strip()
+                            for opt in sel.locator("option").all()
+                            if (t := opt.text_content() or "").strip()
+                        ]
                         if options:
                             dropdowns.append({
                                 "label": label,
@@ -500,21 +500,93 @@ class AccessibilityTreeExtractor:
                             })
                     except Exception:
                         pass
-                
-                # 2. Custom ARIA comboboxes/listboxes
-                aria_dropdowns = frame.locator("[role='combobox'], [role='listbox']").all()
-                for cb in aria_dropdowns:
-                    try:
-                        label = self._find_label_for_element(cb, frame)
-                        # We cannot reliably pre-extract options for custom ones if they aren't expanded,
-                        # but we can note that the field exists and is a dropdown.
+
+                # 2. Custom ARIA comboboxes — use JS to find hidden option elements
+                #    react-select keeps options in a hidden <div role='listbox'> or
+                #    in aria-owns'd element even when the dropdown is closed.
+                try:
+                    custom_opts: list[dict] = frame.evaluate(r"""() => {
+                        const results = [];
+                        const seen = new Set();
+
+                        // ── helper: get label text for a combobox ──────────────
+                        function getLabel(cb) {
+                            // aria-labelledby
+                            const lbId = cb.getAttribute('aria-labelledby');
+                            if (lbId) {
+                                const el = document.getElementById(lbId);
+                                if (el) return el.textContent.trim();
+                            }
+                            // aria-label
+                            const al = cb.getAttribute('aria-label');
+                            if (al) return al.trim();
+                            // ancestor label element
+                            const lbl = cb.closest('[data-testid], .field, .form-group, .application-question');
+                            if (lbl) {
+                                const txt = lbl.querySelector('label, .label, legend, p, span');
+                                if (txt) return txt.textContent.trim();
+                            }
+                            // previous sibling text
+                            let prev = cb.previousElementSibling;
+                            while (prev) {
+                                const t = prev.textContent.trim();
+                                if (t.length > 3) return t;
+                                prev = prev.previousElementSibling;
+                            }
+                            return '';
+                        }
+
+                        // ── helper: extract options for a combobox ─────────────
+                        function getOptions(cb) {
+                            const opts = new Set();
+                            // aria-owns: react-select appends the listbox elsewhere in DOM
+                            const owns = cb.getAttribute('aria-owns') || cb.getAttribute('aria-controls');
+                            if (owns) {
+                                for (const id of owns.split(/\s+/)) {
+                                    const lb = document.getElementById(id);
+                                    if (lb) {
+                                        lb.querySelectorAll('[role="option"]').forEach(o => {
+                                            const t = o.textContent.trim();
+                                            if (t) opts.add(t);
+                                        });
+                                    }
+                                }
+                            }
+                            // Sibling or descendant listbox
+                            const container = cb.closest('.select__container, [class*="select"], [class*="Select"]') || cb.parentElement;
+                            if (container) {
+                                container.querySelectorAll('[role="option"]').forEach(o => {
+                                    const t = o.textContent.trim();
+                                    if (t) opts.add(t);
+                                });
+                                // react-select hidden menu
+                                container.querySelectorAll('.select__option, .react-select__option, [class*="option"]').forEach(o => {
+                                    const t = o.textContent.trim();
+                                    if (t) opts.add(t);
+                                });
+                            }
+                            return [...opts];
+                        }
+
+                        // Walk all comboboxes and listboxes
+                        document.querySelectorAll('[role="combobox"], [role="listbox"]').forEach(cb => {
+                            const label = getLabel(cb);
+                            if (!label || seen.has(label)) return;
+                            seen.add(label);
+                            const options = getOptions(cb);
+                            results.push({ label, options });
+                        });
+                        return results;
+                    }""")
+                    for item in (custom_opts or []):
                         dropdowns.append({
-                            "label": label,
+                            "label": item.get("label", ""),
                             "type": "custom_dropdown",
-                            "options": [],
+                            "options": item.get("options", []),
                         })
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
+
             except Exception:
                 continue
 

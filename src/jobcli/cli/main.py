@@ -54,7 +54,7 @@ def db_send_daily_report(
     """Fetch today's ATS stats from the backend and email them using CLI SMTP credentials."""
     import os
     from jobcli.analytics.report_mailer import send_daily_report
-    server_url = os.getenv("API_URL", "https://api.whitebox-learning.com/api")
+    server_url = os.getenv("API_URL", "https://whitebox-learning.com/api")
     send_daily_report(server_url, mock=mock)
 
 console = Console()
@@ -705,7 +705,7 @@ def setup() -> None:
         console.print("    [yellow]AI form-filling will be disabled. Run [cyan]login[/cyan] and add at least one LLM key.[/yellow]")
 
     if has_wbox:
-        api_hint = (config.sync_server_url or "default https://api.whitebox-learning.com/api").strip()
+        api_hint = (config.sync_server_url or "default https://whitebox-learning.com/api").strip()
         console.print(f"  [green]✓ Whitebox credentials for: {config.job_board_username}[/green]")
         console.print(f"    [dim]API base: {api_hint}[/dim]")
     else:
@@ -940,7 +940,7 @@ def login(
         config.job_board_password = job_board_password
 
     # Auto-detect the WBL API base URL. Only one endpoint is probed:
-    #   - https://api.whitebox-learning.com/api   (production)
+    #   - https://whitebox-learning.com/api   (production)
     # Probe it with the supplied credentials and save it if authentication
     # succeeds.
     # If the probe uncovers actionable issues (bad creds, TLS) we surface a
@@ -1052,7 +1052,7 @@ def config_cmd(
 
     Use ``sync_server_url`` for the WBL API base, e.g.:
 
-        wboxcli config --key sync_server_url --set https://api.whitebox-learning.com/api
+        wboxcli config --key sync_server_url --set https://whitebox-learning.com/api
     """
     config = get_config()
 
@@ -1422,7 +1422,7 @@ def _run_apply(
     console.print(f"Applying to {len(jobs)} job(s)...\n")
 
     engine = ApplicationEngine(config, resume_data, db)
-    tracker = SessionTracker(backend_url=config.sync_server_url or "https://api.whitebox-learning.com/api")
+    tracker = SessionTracker(backend_url=config.sync_server_url or "https://whitebox-learning.com/api")
 
 
     if checkpoint:
@@ -1495,6 +1495,8 @@ def _run_apply(
                                 "total_fields":    _ext + _rules + _llm + _human,
                             }
                         )
+                        # Send analytics instantly to the backend to prevent data loss on crash/force-quit
+                        tracker.send_bulk_summary()
                     elif "skip" in sv or "cancel" in sv:
                         skipped += 1
                     else:
@@ -2093,7 +2095,7 @@ def send_daily_report_cmd(
     """Alias for 'wboxcli db send-daily-report'. Fetch today's ATS stats and email them."""
     import os
     from jobcli.analytics.report_mailer import send_daily_report
-    server_url = os.getenv("API_URL", "https://api.whitebox-learning.com/api")
+    server_url = os.getenv("API_URL", "https://whitebox-learning.com/api")
     send_daily_report(server_url, mock=mock)
 
 

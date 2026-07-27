@@ -36,14 +36,18 @@ class SessionTracker:
             
         url = f"{base}/reports/applications/bulk"
         try:
-            requests.post(
+            resp = requests.post(
                 url,
                 json=self.applications,
                 timeout=10
             )
+            resp.raise_for_status()
         except Exception as e:
             import logging
             logging.warning(f"Failed to send bulk application summary to {url}: {e}")
+            print(f"\n[Warning] Failed to send tracking data to {url}: {e}")
+            if 'resp' in locals() and hasattr(resp, 'text'):
+                print(f"Response details: {resp.text}")
             pass
             
         self.applications.clear()

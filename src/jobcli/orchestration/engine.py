@@ -2353,7 +2353,6 @@ class ApplicationEngine:
     FILL_PIPELINE_STEPS = (
         "① Extension",
         "② Rules (fallback)",
-        "②b Memory",
         "③ LLM",
         "④ Human review (always)",
     )
@@ -2544,15 +2543,20 @@ class ApplicationEngine:
         """Return the current live value if ``action``'s target is already
         populated (per ``snapshot``), else ``None``.
 
-        Matching is permissive: any snapshot key whose identifier appears
-        in the action's selector or matches its label counts as a hit.
-        That's because LLM-proposed selectors are stringly-typed and may
-        reference a field by any of its identifiers.
+        Normalizes both sides by stripping required-markers (``*``) so
+        ``"Country*"`` (LLM) correctly matches ``"country"`` (extension
+        snapshot), while only returning a hit when the snapshot value is
+        non-empty (i.e., the field was actually filled).
         """
+        import re as _re
+
+        def _norm(s: str) -> str:
+            return _re.sub(r"\s+", " ", _re.sub(r"\*+", "", s or "").strip()).lower()
+
         if action.action not in (ActionType.FILL, ActionType.TYPE, ActionType.SELECT):
             return None
-        sel = (action.selector or "").lower()
-        lbl = (action.field_label or "").lower()
+        sel = _norm(action.selector or "")
+        lbl = _norm(action.field_label or "")
         if not sel and not lbl:
             return None
         for key, val in snapshot.items():
@@ -2610,7 +2614,28 @@ class ApplicationEngine:
         logger: JobLogger,
         agent: AgentInterface,
     ) -> tuple[Any, list[dict[str, Any]]]:
-        """Phase 2b — deterministically fill gaps from resume JSON + DB memory."""
+        """Phase 2b — DISABLED.  Previously filled gaps from resume JSON + DB memory.
+
+        Autonomous memory-based fill execution has been disabled because:
+          - Label matching is approximate and fills wrong fields
+          - Confidence gate (0.6) is too low, promoting bad answers
+          - Wrong fills pre-empt the LLM and are never corrected
+            (the don't-refill snapshot filter skips already-filled fields)
+
+        The LLM still receives memory as *context* via ``_prepare_gaps_for_llm``
+        (``enriched_gaps`` with ``suggested_value`` hints and ``gap_hints``).
+        This method is a no-op kept for backwards-compat with callers outside
+        ``_agent_fill_loop`` (none currently exist).
+        """
+        from jobcli.intelligence.memory_prefill import MEMORY_PREFILL_DISABLED
+        if MEMORY_PREFILL_DISABLED:
+            # Return the unchanged ax_tree + enriched gaps (hints only, no actions).
+            enriched, gap_hints = self._prepare_gaps_for_llm(
+                ax_tree, page, memory, synonym_resolver, state
+            )
+            return ax_tree, enriched
+
+        # ── Legacy path (only reachable when MEMORY_PREFILL_DISABLED=False) ──
         enriched, _ = self._prepare_gaps_for_llm(
             ax_tree, page, memory, synonym_resolver, state
         )
@@ -2819,10 +2844,13 @@ class ApplicationEngine:
                 ats_handler=rules_handler,
             )
 
-            # ── Phase 2b/5: Memory prefill (before LLM) ───────────────────
-            enriched_gaps, _ = self._run_memory_prefill(
-                page, ax_tree, extractor, executor, memory,
-                synonym_resolver, state, logger, agent,
+            # ── Pre-LLM gap analysis (hints only — no autonomous fills) ──────
+            # Build the enriched gap list (with suggested_value hints from
+            # resume + memory) that the LLM auditor uses in its prompt.
+            # No browser fill actions are executed here; the LLM is the sole
+            # executor. Memory prefill autonomous execution is disabled.
+            enriched_gaps, _ = self._prepare_gaps_for_llm(
+                ax_tree, page, memory, synonym_resolver, state
             )
 
             # ── Phase 3/5: LLM agent loop ─────────────────────────────────
@@ -3902,15 +3930,9 @@ class ApplicationEngine:
 
                 logger.save_structured_dom(ax_tree.model_dump(), f"ax_tree_page_{page_count}", ExecutionPhase.LLM)
 
-                ax_tree, enriched_gaps = self._run_memory_prefill(
-                    page, ax_tree, extractor, executor, memory,
-                    synonym_resolver, state, logger, agent,
-                )
-                gap_hints = memory.build_gap_hints(
-                    enriched_gaps,
-                    self.resume,
-                    state.detected_ats,
-                    common_questions=self.common_questions,
+                # Rebuild gap hints from current page state (no autonomous fills).
+                enriched_gaps, gap_hints = self._prepare_gaps_for_llm(
+                    ax_tree, page, memory, synonym_resolver, state
                 )
 
                 filled_context = ""
