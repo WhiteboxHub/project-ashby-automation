@@ -1252,6 +1252,8 @@ def _run_apply(
     limit: Optional[int],
     sort: str,
     mode: str,
+    job_ids: Optional[list[int]] = None,
+    ats: Optional[str] = None,
     resume: bool = False,
     skip_resume_prompt: bool = False,
 ) -> None:
@@ -1364,7 +1366,14 @@ def _run_apply(
         if checkpoint:
             jobs = jobs_from_checkpoint(session, checkpoint)
         else:
-            jobs = job_repo.list_pending()
+            # Resolve selected IDs from the pending set only. A stale command
+            # therefore cannot re-apply a job which was already submitted.
+            pending_by_id = {job.id: job for job in job_repo.list_pending()}
+            jobs = (
+                [pending_by_id[job_id] for job_id in job_ids if job_id in pending_by_id]
+                if job_ids
+                else list(pending_by_id.values())
+            )
             if sort.lower() == "newest":
                 jobs.reverse()
             if limit:
@@ -1379,6 +1388,20 @@ def _run_apply(
             session.close()
             raise typer.Exit(0)
 
+    # Discovery happens before ATS detection, so use both the stored ATS type
+    # and the final listing URL when filtering Whitebox jobs.
+    if ats:
+        normalized_ats = ats.strip().lower()
+        if normalized_ats != "ashby":
+            session.close()
+            console.print("[red]Only the Ashby filter is currently supported: --ats ashby[/red]")
+            raise typer.Exit(1)
+        jobs = [
+            job for job in jobs
+            if getattr(job.ats_type, "value", str(job.ats_type)).lower() == "ashby"
+            or "ashbyhq.com" in job.url.lower()
+        ]
+
     original_count = len(jobs)
     jobs = [
         j
@@ -1391,7 +1414,8 @@ def _run_apply(
         console.print(f"[yellow]Filtered out {original_count - len(jobs)} unsupported jobs (Workday, etc.).[/yellow]")
 
     if not jobs:
-        console.print("[yellow]No supported jobs remaining in the list.[/yellow]")
+        suffix = " for the selected Ashby filter" if ats else ""
+        console.print(f"[yellow]No supported pending jobs remaining{suffix}.[/yellow]")
         session.close()
         return
 
@@ -1664,6 +1688,17 @@ def apply(
         "-c",
         help="Resume the last batch apply stopped with Ctrl+C (same as ``wboxcli continue``).",
     ),
+    job_id: Optional[list[int]] = typer.Option(
+        None,
+        "--job-id",
+        "-j",
+        help="Apply only these pending job IDs. Repeat for each selected job.",
+    ),
+    ats: Optional[str] = typer.Option(
+        None,
+        "--ats",
+        help="Filter pending jobs by ATS. Currently supported: ashby.",
+    ),
 ) -> None:
     """Apply to all pending jobs from ``discover`` (or one job with ``--url``).
 
@@ -1681,6 +1716,8 @@ def apply(
         limit=limit,
         sort=sort,
         mode=mode,
+        job_ids=job_id,
+        ats=ats,
         resume=continue_run,
         skip_resume_prompt=continue_run,
     )
@@ -1695,6 +1732,8 @@ def continue_apply() -> None:
         limit=None,
         sort="oldest",
         mode=config.interaction_mode.value if config.interaction_mode else "supervised",
+        job_ids=None,
+        ats=None,
         resume=True,
         skip_resume_prompt=True,
     )
@@ -2065,8 +2104,6 @@ def schedule_report_cmd(
 ) -> None:
     """Setup a Windows Scheduled Task to run the daily report locally."""
     import subprocess
-    import sys
-    import os
     from dotenv import load_dotenv
     
     load_dotenv()

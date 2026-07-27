@@ -19,6 +19,7 @@ from jobcli.utils.logger import JobLogger
 from jobcli.profile.schemas import ExecutionPhase, ResumeData
 
 
+
 # ---------------------------------------------------------------------------
 # EEO / search skip patterns — ported from shouldSkipInput() in extension
 # ---------------------------------------------------------------------------
@@ -539,7 +540,165 @@ class FormFieldLocator:
                     phase=ExecutionPhase.RULES,
                 )
             return False
+    def fill_radio_field(self, labels: list[str], value: str) -> bool:
+        """Select a radio button by matching its label text."""
 
+        value_lower = str(value).strip().lower()
+
+        try:
+            radios = self.page.locator("input[type='radio']")
+
+            for i in range(radios.count()):
+                radio = radios.nth(i)
+
+                try:
+                    radio_id = radio.get_attribute("id") or ""
+                    radio_value = (radio.get_attribute("value") or "").strip().lower()
+
+                    label_text = ""
+                    if radio_id:
+                        lbl = self.page.locator(f"label[for='{radio_id}']")
+                        if lbl.count():
+                            label_text = lbl.first.inner_text().strip().lower()
+
+                    if (
+                        value_lower == radio_value
+                        or value_lower == label_text
+                        or value_lower in label_text
+                    ):
+                        radio.check(force=True)
+
+                        if self.logger:
+                            self.logger.info(
+                                f"Selected radio option '{value}'",
+                                phase=ExecutionPhase.RULES,
+                            )
+
+                        return True
+
+                except Exception:
+                    continue
+
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(
+                    f"Failed to fill radio field: {e}",
+                    phase=ExecutionPhase.RULES,
+                )
+
+        return False
+
+    def fill_checkbox_field(self, labels: list[str], value: str) -> bool:
+        """Check or uncheck a checkbox."""
+
+        should_check = str(value).strip().lower() in {
+            "yes",
+            "true",
+            "1",
+            "checked",
+            "accept",
+        }
+
+        try:
+            checkboxes = self.page.locator("input[type='checkbox']")
+
+            for i in range(checkboxes.count()):
+                checkbox = checkboxes.nth(i)
+
+                try:
+                    checkbox_id = checkbox.get_attribute("id") or ""
+                    label_text = ""
+
+                    if checkbox_id:
+                        lbl = self.page.locator(f"label[for='{checkbox_id}']")
+                        if lbl.count():
+                            label_text = lbl.first.inner_text().strip().lower()
+
+                    for label in labels:
+                        if label.lower() in label_text:
+                            if should_check:
+                                checkbox.check(force=True)
+                            else:
+                                checkbox.uncheck(force=True)
+
+                            if self.logger:
+                                self.logger.info(
+                                    f"Checkbox '{label}' updated",
+                                    phase=ExecutionPhase.RULES,
+                                )
+
+                            return True
+
+                except Exception:
+                    continue
+
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(
+                    f"Failed to fill checkbox field: {e}",
+                    phase=ExecutionPhase.RULES,
+                )
+
+        return False
+
+    def fill_multiselect_field(
+        self,
+        labels: list[str],
+        values: list[str],
+    ) -> bool:
+        """Select multiple options from a multi-select element."""
+
+        selector = self.find_field_by_label(labels, "select")
+        if not selector:
+            return False
+
+        try:
+            element = self.page.query_selector(selector)
+            if not element:
+                return False
+
+            options = element.evaluate(
+                """
+                el => Array.from(el.options).map(o => ({
+                    value: o.value,
+                    text: o.text.trim()
+                }))
+                """
+            )
+
+            selected = []
+
+            for wanted in values:
+                wanted = wanted.lower()
+
+                for opt in options:
+                    if (
+                        wanted == opt["text"].lower()
+                        or wanted == opt["value"].lower()
+                        or wanted in opt["text"].lower()
+                    ):
+                        selected.append(opt["value"])
+                        break
+
+            if selected:
+                self.page.select_option(selector, value=selected)
+
+                if self.logger:
+                    self.logger.info(
+                        f"Selected {len(selected)} multi-select options",
+                        phase=ExecutionPhase.RULES,
+                    )
+
+                return True
+
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(
+                    f"Failed to fill multi-select field: {e}",
+                    phase=ExecutionPhase.RULES,
+                )
+
+        return False    
     # ------------------------------------------------------------------
     # Legacy methods — kept for backward compatibility
     # ------------------------------------------------------------------
@@ -779,7 +938,26 @@ class FormFiller:
                         fill_val = bare_national_number(value) or value
                     except Exception:
                         pass
-                success = self.field_locator.fill_text_field(labels, fill_val)
+                if classified_field == "radio":
+                    success = self.field_locator.fill_radio_field(labels, fill_val)
+
+                elif classified_field == "checkbox":
+                    success = self.field_locator.fill_checkbox_field(labels, fill_val)
+
+                elif classified_field == "multiselect":
+                    values = (
+                        fill_val
+                        if isinstance(fill_val, list)
+                        else [v.strip() for v in str(fill_val).split(",") if v.strip()]
+                    )
+                    success = self.field_locator.fill_multiselect_field(labels, values)
+
+                elif classified_field == "select":
+                    success = self.field_locator.fill_select_field(labels, fill_val)
+
+                else:
+                    success = self.field_locator.fill_text_field(labels, fill_val)
+
                 results[short_key] = success
 
         return results

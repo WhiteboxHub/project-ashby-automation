@@ -1490,6 +1490,9 @@ def _cmd_help():
         ]),
         ("Running", [
             ("apply",          "Apply to all pending jobs (after discover)"),
+            ("jobs --ats ashby", "List pending Ashby jobs with selectable IDs"),
+            ("apply --ats ashby", "Apply all pending Ashby jobs, one at a time"),
+            ("apply --ats ashby -j 12 -j 19", "Apply selected Ashby job IDs"),
             ("apply --url URL","Apply to a specific URL"),
             ("continue",       "Resume last apply stopped with Ctrl+C"),
             ("discover",       "Discover jobs from WBL API (cli_window, paginated)"),
@@ -1555,7 +1558,7 @@ def _cmd_status():
         console.print(f"  [red]error: {e}[/]\n")
 
 
-def _cmd_jobs():
+def _cmd_jobs(ats: str | None = None):
     try:
         from jobcli.cli.main import get_database
         from jobcli.storage.repositories import JobRepository
@@ -1566,6 +1569,16 @@ def _cmd_jobs():
             pending = JobRepository(session).list_pending()
             session.close()
 
+        if ats:
+            if ats.strip().lower() != "ashby":
+                console.print("\n  [red]Only the Ashby filter is currently supported: jobs --ats ashby[/]\n")
+                return
+            pending = [
+                job for job in pending
+                if getattr(job.ats_type, "value", str(job.ats_type)).lower() == "ashby"
+                or "ashbyhq.com" in job.url.lower()
+            ]
+
         if not pending:
             console.print(f"\n  [{D}]No pending jobs. Run[/] [{K}]discover[/] [{D}]to find some.[/]\n")
             return
@@ -1574,9 +1587,15 @@ def _cmd_jobs():
         for i, job in enumerate(pending, 1):
             title = job.title or "untitled"
             url = job.url[:60] + "…" if len(job.url) > 60 else job.url
-            console.print(f"  [{D}]{i:>3}.[/]  [{K}]{title}[/]")
+            console.print(f"  [{D}]{i:>3}.[/] [cyan]ID {job.id}[/]  [{K}]{title}[/]")
             console.print(f"       [{F}]{url}[/]")
-        console.print(f"\n  [{D}]{len(pending)} jobs pending[/]\n")
+        label = " Ashby" if ats else ""
+        console.print(f"\n  [{D}]{len(pending)}{label} jobs pending[/]")
+        if ats and pending:
+            console.print(f"  [{D}]Apply all:[/] [{K}]apply --ats ashby[/]")
+            console.print(f"  [{D}]Apply selected:[/] [{K}]apply --ats ashby -j ID -j ID[/]\n")
+        else:
+            console.print()
 
     except Exception as e:
         console.print(f"  [red]error: {e}[/]\n")
@@ -1609,7 +1628,13 @@ def _dispatch(raw: str):
         if args and args[0].lower() == "apply":
             _exec(["apply"] + args[1:])
             return
-        _cmd_jobs()
+        ats = None
+        if len(args) == 2 and args[0].lower() == "--ats":
+            ats = args[1]
+        elif args:
+            console.print(f"\n  [{D}]usage:[/] [{K}]jobs [--ats ashby][/ ]\n")
+            return
+        _cmd_jobs(ats=ats)
         return
     if cmd in ("log", "logs"):
         from jobcli.cli.main import _run_log
