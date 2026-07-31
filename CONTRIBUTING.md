@@ -6,8 +6,8 @@ a dev environment, what conventions we follow, and how to get a change merged.
 ## Quick start
 
 ```bash
-git clone https://github.com/WhiteboxHub/project-talentscreen-wbox-cli.git
-cd project-talentscreen-wbox-cli
+git clone https://github.com/WhiteboxHub/project-ashby-automation.git
+cd project-ashby-automation
 
 python3 -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate

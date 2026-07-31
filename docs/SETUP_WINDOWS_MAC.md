@@ -10,7 +10,7 @@ Complete command reference for local development: build the Chrome extension, co
 |-------------|--------|
 | **Python 3.10+** | `python --version` |
 | **Git** | To clone repos |
-| **Two folders** (sibling repos under `wbox/`) | `project-talentscreen-autofill-extension` + `project-talentscreen-wbox-cli` |
+| **Two folders** (sibling repos under `wbox/`) | `project-talentscreen-autofill-extension` + `project-ashby-automation` |
 
 Optional: global install via `install.sh` / `install.ps1` (see main [README](../README.md)).
 
@@ -34,7 +34,7 @@ On **macOS / Linux**, `./build.sh` in the CLI repo also unpacks the ZIP during t
 
 | Path | Role |
 |------|------|
-| `project-talentscreen-wbox-cli/extension/talentscreen-autofill.zip` | Transport artifact (gitignored) |
+| `project-ashby-automation/extension/talentscreen-autofill.zip` | Transport artifact (gitignored) |
 | `~/.jobcli/extension_unpacked/` | What Chrome actually loads |
 | `~/.jobcli/jobcli.db` | Login, API keys, resume paths, jobs queue |
 
@@ -54,7 +54,7 @@ Output: `dist/talentscreen-autofill-v2.0.0.zip` (version from `manifest.json`).
 Copy into the CLI repo:
 
 ```bash
-cp dist/talentscreen-autofill-v*.zip ../project-talentscreen-wbox-cli/extension/talentscreen-autofill.zip
+cp dist/talentscreen-autofill-v*.zip ../project-ashby-automation/extension/talentscreen-autofill.zip
 ```
 
 Or from the extension repo:
@@ -90,7 +90,7 @@ Copy into the CLI repo (wildcard-safe):
 
 ```powershell
 $zip = Get-ChildItem dist\talentscreen-autofill-v*.zip | Select-Object -First 1
-Copy-Item $zip.FullName "..\project-talentscreen-wbox-cli\extension\talentscreen-autofill.zip" -Force
+Copy-Item $zip.FullName "..\project-ashby-automation\extension\talentscreen-autofill.zip" -Force
 ```
 
 **From CMD** (if you only have Command Prompt):
@@ -111,7 +111,7 @@ cd /c/Users/sampa/OneDrive/Desktop/wbox/project-talentscreen-autofill-extension
 If `zip` is not installed, `build.sh` automatically runs `build.ps1` via PowerShell.
 
 ```bash
-cp dist/talentscreen-autofill-v*.zip ../project-talentscreen-wbox-cli/extension/talentscreen-autofill.zip
+cp dist/talentscreen-autofill-v*.zip ../project-ashby-automation/extension/talentscreen-autofill.zip
 ```
 
 ---
@@ -121,7 +121,7 @@ cp dist/talentscreen-autofill-v*.zip ../project-talentscreen-wbox-cli/extension/
 ### macOS / Linux
 
 ```bash
-cd /path/to/wbox/project-talentscreen-wbox-cli
+cd /path/to/wbox/project-ashby-automation
 ./build.sh
 source .venv/bin/activate
 ```
@@ -135,7 +135,7 @@ FORCE_REINSTALL_EXTENSION=1 ./build.sh
 ### Windows — Command Prompt (CMD)
 
 ```cmd
-cd C:\Users\sampa\OneDrive\Desktop\wbox\project-talentscreen-wbox-cli
+cd C:\Users\sampa\OneDrive\Desktop\wbox\project-ashby-automation
 build.bat
 ```
 
@@ -150,7 +150,7 @@ set PYTHONPATH=src
 ### Windows — PowerShell
 
 ```powershell
-cd C:\Users\sampa\OneDrive\Desktop\wbox\project-talentscreen-wbox-cli
+cd C:\Users\sampa\OneDrive\Desktop\wbox\project-ashby-automation
 .\build.bat
 ```
 
@@ -271,7 +271,7 @@ Generic form:
 **Windows CMD examples:**
 
 ```cmd
-cd C:\Users\sampa\OneDrive\Desktop\wbox\project-talentscreen-wbox-cli
+cd C:\Users\sampa\OneDrive\Desktop\wbox\project-ashby-automation
 set PYTHONPATH=src
 .\.venv\Scripts\python.exe -m jobcli.cli.main doctor
 .\.venv\Scripts\python.exe -m jobcli.cli.main login
@@ -283,7 +283,7 @@ set PYTHONPATH=src
 **macOS / Linux examples:**
 
 ```bash
-cd /path/to/project-talentscreen-wbox-cli
+cd /path/to/project-ashby-automation
 export PYTHONPATH=src
 .venv/bin/python -m jobcli.cli.main doctor
 .venv/bin/python -m jobcli.cli.main apply --limit 1
@@ -454,9 +454,9 @@ Delete `~/.jobcli/jobcli.db` (or never ran onboarding on this PC). `apply` alone
 cd C:\Users\sampa\OneDrive\Desktop\wbox\project-talentscreen-autofill-extension
 powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1
 dir dist\*.zip
-copy /Y dist\talentscreen-autofill-v*.zip ..\project-talentscreen-wbox-cli\extension\talentscreen-autofill.zip
+copy /Y dist\talentscreen-autofill-v*.zip ..\project-ashby-automation\extension\talentscreen-autofill.zip
 
-cd ..\project-talentscreen-wbox-cli
+cd ..\project-ashby-automation
 set PYTHONPATH=src
 .\.venv\Scripts\python.exe -m jobcli.cli.main doctor
 build.bat
@@ -467,7 +467,7 @@ In TUI: `apply --limit 1`
 Or without TUI (after `doctor` unpacked the extension):
 
 ```cmd
-cd C:\Users\sampa\OneDrive\Desktop\wbox\project-talentscreen-wbox-cli
+cd C:\Users\sampa\OneDrive\Desktop\wbox\project-ashby-automation
 set PYTHONPATH=src
 .\.venv\Scripts\python.exe -m jobcli.cli.main doctor
 .\.venv\Scripts\python.exe -m jobcli.cli.main apply --limit 1
@@ -480,7 +480,7 @@ cd ../project-talentscreen-autofill-extension
 ./build.sh
 ./scripts/copy-to-cli.sh
 
-cd ../project-talentscreen-wbox-cli
+cd ../project-ashby-automation
 ./build.sh
 source .venv/bin/activate
 export PYTHONPATH=src

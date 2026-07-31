@@ -10,7 +10,11 @@ import os
 import random
 import time
 import re
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+if TYPE_CHECKING:
+    from jobcli.intelligence.memory import AgentMemory
+    from jobcli.human.agent_interface import HandoffResult
 
 from playwright.sync_api import Error, Page, sync_playwright
 
@@ -877,11 +881,11 @@ class ApplicationEngine:
         self.stop_requested = False
         
         # Browser session state
-        self.playwright = None
-        self.browser = None
-        self.context = None
-        self.active_page = None
-        self.user_data_dir = None
+        self.playwright: Any = None
+        self.browser: Any = None
+        self.context: Any = None
+        self.active_page: Any = None
+        self.user_data_dir: Any = None
 
     def _resolve_extension_dir(self) -> Optional[str]:
         """Pick a valid TalentScreen extension directory or return ``None``.
@@ -1649,14 +1653,19 @@ class ApplicationEngine:
                 sync_repo.increment_apps_since_sync()
 
             # ── 6. Final browser pause ──────────────────────────────
-            # Only pause if NOT in a batch success (keep moving!)
-            # But DO pause if it failed so the human can see why.
+            # On failure: show the 2s countdown ("Moving to next job in 2s…")
+            # so the human can glance at the browser before the agent moves on.
+            # On success: if human manually filled any fields, give a 2s window
+            # so they can see the confirmation page; otherwise a 1s flash is fine.
             if not self.config.headless:
                 if not success:
                     agent.final_browser_pause()
+                elif state.human_fields > 0:
+                    # Human was involved — show a brief countdown before moving on
+                    agent.final_browser_pause()
                 else:
-                    # Just a tiny delay to let the human see the success before navigating away
-                    page.wait_for_timeout(1500)
+                    # Fully automated — just a quick 1s flash, keep the batch moving
+                    page.wait_for_timeout(1000)
 
             # ── 7. Populate field-ownership counters on state ────────
             # These are read by cli/main.py → tracker.add_application()
@@ -2657,25 +2666,10 @@ class ApplicationEngine:
         (``_handoff_human_in_loop`` / ``show_failed_fields``) runs only when
         automation cannot finish or ``InteractionMode`` requires review.
         """
+        # LLM is globally disabled — skip the API-key check entirely and
+        # fall straight through to Extension + Rules fill.
         llm_client = self._get_llm_client(logger)
-        provider = self.config.default_llm_provider
-
-        if not llm_client:
-            agent.show_warning(
-                f"No API key for {provider} — switching to human-driven mode."
-            )
-            handoff = self._handoff_human_in_loop(
-                agent,
-                logger,
-                state,
-                reason=f"AI provider '{provider}' has no API key configured.",
-                hint="Fill and submit the form yourself in the browser. "
-                     "When you're done, press ENTER and JobCLI will record the result.",
-            )
-            if self._handoff_skipped_job(handoff, agent, logger, ExecutionPhase.HUMAN):
-                return False
-            return (not handoff.cancelled) and self._submission_looks_plausible(handoff.page)
-
+        provider = self.config.default_llm_provider or "default"
         try:
             page.wait_for_timeout(500)
             self._dismiss_cookie_consent(page, logger)
@@ -2702,12 +2696,65 @@ class ApplicationEngine:
             # and go straight to the LLM (and then to the compulsory
             # human review). See _last_extension_filled_count in
             # _run_extension_autofill_phase.
+            # LLM is disabled globally — always use Extension + Rules + Human only.
+            skip_llm = True
+
             rules_handler = None
             self._last_rules_filled_count = 0
             try:
                 rules_handler = ATSHandlerFactory.create_handler(
                     state.detected_ats, page, self.resume, logger
                 )
+                if state.detected_ats == ATSType.ASHBY or skip_llm:
+                    agent.show_phase_banner(f"Hybrid Extension + Playwright Automation ({state.detected_ats.value} - No LLM)")
+                    if rules_handler:
+                        rules_handler.fill_form(getattr(self.resume, "pdf_path", None))
+
+                        # ── Human review gate ───────────────────────────────────
+                        # Pause here so the human can check every field, correct
+                        # mismatches, and fill anything the rules left blank.
+                        # Only fires after ENTER + 2-second countdown.
+                        agent.pause_for_form_review()
+
+                        # ── Submit automatically with validation-error retry loop ──
+                        max_submit_attempts = 5
+                        for attempt in range(1, max_submit_attempts + 1):
+                            submitted = rules_handler.submit_application()
+                            if submitted:
+                                agent.show_success(
+                                    f"{state.detected_ats.value} application submitted "
+                                    "via Extension + Rules."
+                                )
+                                logger.info(
+                                    f"{state.detected_ats.value} application completed "
+                                    "via Extension + Playwright",
+                                    phase=ExecutionPhase.RULES,
+                                )
+                                break
+                            else:
+                                # Validation errors still on screen — pause for human fix
+                                from rich.panel import Panel
+                                agent.console.print(
+                                    Panel(
+                                        f"[bold red]Ashby validation errors detected "
+                                        f"(attempt {attempt}/{max_submit_attempts}).[/bold red]\n\n"
+                                        "  [yellow]→[/yellow] Fix the highlighted fields in the browser\n"
+                                        "  [yellow]→[/yellow] Then press [bold green]ENTER[/bold green] "
+                                        "to retry submission",
+                                        title="[bold red]>>> VALIDATION ERRORS — FIX & RETRY <<<[/bold red]",
+                                        border_style="red",
+                                    )
+                                )
+                                try:
+                                    agent._get_user_input(
+                                        "  [yellow]Press ENTER to retry submit →[/yellow] ",
+                                        timeout_seconds=None,
+                                        default="",
+                                    )
+                                except Exception:
+                                    pass
+                        return True
+
                 if self._last_extension_filled_count == 0:
                     if rules_handler and state.detected_ats not in (ATSType.UNKNOWN,):
                         agent.show_phase_banner("Rules-based fallback (2/4: extension filled nothing)")
@@ -2990,6 +3037,10 @@ class ApplicationEngine:
                 # issue (retrying never helps), so we render a remediation
                 # message instead of the generic "AI unavailable" hand-off.
                 from jobcli.llm.client import TLSConnectionError
+                if not llm_client:
+                    logger.error("LLM client not initialized.", phase=ExecutionPhase.LLM)
+                    logger.log_phase_end(ExecutionPhase.LLM, False)
+                    return False
                 try:
                     llm_response = llm_client.analyze_page_from_axtree(
                         ax_tree, self.resume, task=task,
@@ -3483,10 +3534,11 @@ class ApplicationEngine:
                                 if ok:
                                     retry_succeeded += 1
                                     label = act.field_label or act.selector
-                                    memory.save_field_answer(
-                                        label, act.value, state.detected_ats,
-                                        success=True, source="human",
-                                    )
+                                    if act.value:
+                                        memory.save_field_answer(
+                                            label, act.value, state.detected_ats,
+                                            success=True, source="human",
+                                        )
                                     try:
                                         self.locator_repo.upsert_for_field(
                                             ats_type=state.detected_ats,
@@ -3945,6 +3997,10 @@ class ApplicationEngine:
                     gap_hints=gap_hints,
                 ) + filled_context
 
+                if not llm_client:
+                    logger.error("LLM client not initialized.", phase=ExecutionPhase.LLM)
+                    logger.log_phase_end(ExecutionPhase.LLM, False)
+                    return False
                 llm_response = llm_client.analyze_page_from_axtree(
                     ax_tree, self.resume, task="fill_empty_fields_only",
                     memory_context=memory_context,

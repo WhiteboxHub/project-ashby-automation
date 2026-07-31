@@ -131,11 +131,8 @@ class BaseATSHandler(ABC):
         return None
 
     def humanized_fill(self, locator, value: str) -> bool:
-        """Type into a field with human-like cadence. Returns False if already filled."""
+        """Fill a locator atomically and reliably using locator.fill()."""
         from jobcli.utils.fill_guard import should_skip_refill
-
-        import random as _r
-        import sys as _sys
 
         if not value:
             return False
@@ -150,52 +147,23 @@ class BaseATSHandler(ABC):
 
         try:
             locator.scroll_into_view_if_needed(timeout=1500)
-            locator.hover(timeout=1500)
-            self.page.wait_for_timeout(_r.randint(80, 180))
         except Exception:
             pass
 
-        # Use force=True to handle cases where elements like floating labels/headers
-        # intercept the pointer events. Playwright's default actionability check
-        # can be too strict in these scenarios.
         try:
-            locator.click(timeout=1500, force=True)
+            locator.fill(value, timeout=3000)
+            self.page.wait_for_timeout(100)
+            return True
         except Exception:
-            # Final fallback if even forced click fails
             try:
                 locator.focus(timeout=1000)
-            except Exception:
-                pass
-        
-        self.page.wait_for_timeout(_r.randint(120, 280))
-
-        mod = "Meta" if _sys.platform == "darwin" else "Control"
-        try:
-            self.page.keyboard.press(f"{mod}+A")
-            self.page.wait_for_timeout(_r.randint(30, 90))
-            self.page.keyboard.press("Backspace")
-            self.page.wait_for_timeout(_r.randint(40, 110))
-        except Exception:
-            try:
-                locator.fill("")
-            except Exception:
-                pass
-
-        words = value.split(" ")
-        for idx, w in enumerate(words):
-            if idx > 0:
-                self.page.keyboard.type(" ", delay=_r.randint(40, 120))
-            per_char_delay = _r.randint(55, 150)
-            self.page.keyboard.type(w, delay=per_char_delay)
-            if idx < len(words) - 1 and _r.random() < 0.18:
-                self.page.wait_for_timeout(_r.randint(150, 350))
-
-        self.page.wait_for_timeout(_r.randint(90, 220))
-        try:
-            self.page.keyboard.press("Tab")
-        except Exception:
-            pass
-        return True
+                locator.fill(value, force=True)
+                self.page.wait_for_timeout(100)
+                return True
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"humanized_fill failed: {e}", phase=ExecutionPhase.RULES)
+                return False
 
     def wait_for_page_load(self, timeout: int = 5000) -> None:
         """Wait for page to load."""

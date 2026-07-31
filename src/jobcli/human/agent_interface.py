@@ -49,6 +49,7 @@ from jobcli.profile.schemas import (
     InteractionMode,
     ResumeData,
     SelectorType,
+    CommonQuestions,
 )
 from jobcli.storage.repositories import LearnedLocatorRepository
 
@@ -430,7 +431,7 @@ class AgentInterface:
         memory: Optional["AgentMemory"] = None,
         resume: Optional[ResumeData] = None,
         ats_type: Optional[ATSType] = None,
-        common_questions: Optional["CommonQuestions"] = None,
+        common_questions: Optional[CommonQuestions] = None,
     ) -> None:
         """Update memory / resume / ats_type after construction (e.g. once detected)."""
         if memory is not None:
@@ -1276,7 +1277,8 @@ class AgentInterface:
             self.console.print(f"    {c}")
             
         try:
-            res = self._get_user_input("  Choice [B]: ", default="b").lower()
+            raw_res = self._get_user_input("  Choice [B]: ", default="b")
+            res = (raw_res or "b").lower()
             if res.startswith("v"):
                 new_val = self._get_user_input(f"  Value for '{label}': ", default=value)
                 return new_val
@@ -1285,6 +1287,8 @@ class AgentInterface:
                 for i, opt in enumerate(options, 1):
                     self.console.print(f"    [{i}] {opt}")
                 opt_idx = self._get_user_input(f"  Select option (1-{len(options)}): ")
+                if not opt_idx:
+                    return None
                 try:
                     return options[int(opt_idx) - 1]
                 except (ValueError, IndexError):
@@ -1661,16 +1665,68 @@ class AgentInterface:
 
         return filled
 
+    def pause_for_form_review(self) -> None:
+        """Pause after auto-fill so the human can review/fix the form before submit.
+
+        Flow
+        ----
+        1. Prints a cyan "REVIEW REQUIRED" banner explaining what to do.
+        2. Waits indefinitely for ENTER (no timeout — human must confirm explicitly).
+        3. Once ENTER is pressed, shows a 2-second submit countdown.
+           The human can press ENTER again to skip the countdown and submit immediately.
+
+        In AUTO mode the pause is skipped entirely and submit fires straight away.
+        """
+        if self.mode == InteractionMode.AUTO:
+            return
+
+        self.console.print(
+            Panel(
+                "[bold]Form has been pre-filled automatically.[/bold]\n\n"
+                "  [cyan]→[/cyan] Check all fields in the browser\n"
+                "  [cyan]→[/cyan] Fix anything that looks wrong or is left blank\n"
+                "  [cyan]→[/cyan] When everything looks good, press "
+                "[bold green]ENTER[/bold green] to start the submit countdown",
+                title="[bold cyan]>>> REVIEW REQUIRED — CHECK BROWSER <<<[/bold cyan]",
+                border_style="cyan",
+            )
+        )
+        try:
+            # No timeout — wait until the human explicitly presses ENTER.
+            self._get_user_input(
+                "  [cyan]Press ENTER when ready to submit →[/cyan] ",
+                timeout_seconds=None,
+                default="",
+            )
+        except Exception:
+            pass
+
+        # 2-second countdown so the human has one last chance to abort (Ctrl+C).
+        self.console.print(
+            "\n  [dim]Submitting in [bold]2s[/bold]… "
+            "(press [bold green]ENTER[/bold green] to submit now)[/dim]"
+        )
+        try:
+            self._get_user_input("", timeout_seconds=2, default="")
+        except Exception:
+            pass
+
     def final_browser_pause(self) -> None:
-        """Keep the browser open for final inspection (non-headless only)."""
+        """Keep the browser open briefly, then auto-advance to the next job.
+
+        Shows a 2-second countdown in the terminal. The user can press ENTER
+        to advance immediately, or simply wait — the agent moves on
+        automatically after 2 seconds without any keypress required.
+        """
         if self.mode == InteractionMode.AUTO:
             return
         self.console.print(
-            "\n  [dim]Browser is still open for inspection. Press ENTER to close.[/dim]"
+            "\n  [dim]Moving to next job in [bold]2s[/bold]… "
+            "(press [bold green]ENTER[/bold green] to go now)[/dim]"
         )
         try:
-            input()
-        except (EOFError, KeyboardInterrupt):
+            self._get_user_input("", timeout_seconds=2, default="")
+        except Exception:
             pass
 
     # ------------------------------------------------------------------

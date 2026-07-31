@@ -3,7 +3,7 @@
 #  WboxCLI Global Uninstaller
 #
 #  Usage:
-#    curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/uninstall.sh | bash
+#    curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/uninstall.sh | bash
 #    — or —
 #    bash ~/.jobcli/src/scripts/uninstall.sh
 # ──────────────────────────────────────────────────────────────────────

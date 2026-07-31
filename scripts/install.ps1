@@ -2,7 +2,7 @@
 #  WboxCLI Global Installer - Windows (PowerShell)
 #
 #  Usage:
-#    irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/install.ps1 | iex
+#    irm https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/install.ps1 | iex
 #
 #  What it does:
 #    1. Clones (or updates) the repo into %USERPROFILE%\.jobcli\src
@@ -21,7 +21,7 @@ $SrcDir        = Join-Path $InstallDir "src"
 $VenvDir       = Join-Path $InstallDir "venv"
 $BinDir        = Join-Path $env:USERPROFILE ".local\bin"
 $Wrapper       = Join-Path $BinDir "wboxcli.cmd"
-$RepoUrl       = "https://github.com/WhiteboxHub/project-talentscreen-wbox-cli.git"
+$RepoUrl       = "https://github.com/WhiteboxHub/project-ashby-automation.git"
 $Branch        = if ($env:JOBCLI_BRANCH) { $env:JOBCLI_BRANCH } else { "main" }
 
 function Write-Step   { param($msg) Write-Host "[info]  $msg" -ForegroundColor Cyan }

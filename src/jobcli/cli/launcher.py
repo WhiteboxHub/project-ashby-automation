@@ -47,9 +47,9 @@ def reexec_via_managed_venv(argv: list[str] | None = None) -> None:
         _print_bootstrap_error(
             "WboxCLI is not installed. Run the installer:\n"
             "  Windows: irm https://raw.githubusercontent.com/WhiteboxHub/"
-            "project-talentscreen-wbox-cli/main/scripts/install.ps1 | iex\n"
+            "project-ashby-automation/main/scripts/install.ps1 | iex\n"
             "  macOS:   curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/"
-            "project-talentscreen-wbox-cli/main/scripts/install.sh | bash"
+            "project-ashby-automation/main/scripts/install.sh | bash"
         )
         raise SystemExit(1)
 

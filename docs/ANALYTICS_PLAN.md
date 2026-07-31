@@ -5,7 +5,7 @@ This document is a checklist-driven plan to release `jobcli` (CLI command: `wbox
 ## 0. What exists in this codebase today (verified)
 
 ### 0.1 Git repo and main branch
-- The repository exists under `project-talentscreen-wbox-cli/` and has a `main` branch reference (`refs/heads/main`).
+- The repository exists under `project-ashby-automation/` and has a `main` branch reference (`refs/heads/main`).
 - There is no local `.github/` directory in this checkout (no GitHub Actions workflows are present here), so CI/release automation must be added.
 
 ### 0.2 Existing telemetry vs. usage analytics

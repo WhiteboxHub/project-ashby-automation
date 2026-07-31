@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - All install / uninstall URLs now point to
-  `github.com/WhiteboxHub/project-talentscreen-wbox-cli` (was `WhiteboxHub/wbox-cli`).
+  `github.com/WhiteboxHub/project-ashby-automation` (was `WhiteboxHub/wbox-cli`).
 - Tightened `.gitignore`; stopped tracking `.deepeval/` cache files.
 
 ### Known issues
@@ -43,5 +43,5 @@ Initial public release.
 - Multi-provider LLM support (OpenAI, Anthropic, Gemini).
 - Structured logging with screenshots and DOM snapshots.
 
-[Unreleased]: https://github.com/WhiteboxHub/project-talentscreen-wbox-cli/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/WhiteboxHub/project-talentscreen-wbox-cli/releases/tag/v0.1.0
+[Unreleased]: https://github.com/WhiteboxHub/project-ashby-automation/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/WhiteboxHub/project-ashby-automation/releases/tag/v0.1.0

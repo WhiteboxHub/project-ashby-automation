@@ -2,7 +2,7 @@
 #  WboxCLI Global Uninstaller — Windows (PowerShell)
 #
 #  Usage:
-#    irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/uninstall.ps1 | iex
+#    irm https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/uninstall.ps1 | iex
 # ──────────────────────────────────────────────────────────────────────
 
 $InstallDir = Join-Path $env:USERPROFILE ".jobcli"

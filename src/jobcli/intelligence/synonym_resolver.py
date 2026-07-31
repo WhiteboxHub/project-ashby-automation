@@ -629,6 +629,12 @@ class ResumeAutoDetector:
             elif network in ("portfolio", "website", "personal"):
                 portfolio = url
 
+        main_url = str(low_basics.get("website") or low_basics.get("url") or "").strip()
+        if not linkedin and "linkedin.com" in main_url.lower():
+            linkedin = main_url
+        if not github and "github.com" in main_url.lower():
+            github = main_url
+
         personal = {
             "first_name": first_name,
             "last_name": last_name,
@@ -642,7 +648,7 @@ class ResumeAutoDetector:
             "linkedin": linkedin,
             "github": github,
             "portfolio": portfolio,
-            "website": low_basics.get("url", ""),
+            "website": main_url,
         }
 
         # Education

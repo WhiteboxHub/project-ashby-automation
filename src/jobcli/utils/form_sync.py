@@ -156,10 +156,12 @@ def looks_like_confirmation(
     """Return ``(strong, soft, signals)`` for post-submit confirmation heuristics."""
     try:
         page_text = (
-            page.evaluate(
-                "() => (document.body ? document.body.innerText : '').toLowerCase()"
-            )
-            or ""
+            str(
+                page.evaluate(
+                    "() => (document.body ? document.body.innerText : '').toLowerCase()"
+                )
+                or ""
+            ).lower()
         )[:20_000]
     except Exception:
         page_text = ""

@@ -235,6 +235,23 @@ class JobRepository:
         )
         return [_job_model_to_job(j) for j in jobs]
 
+    def list_pending_ashby(self) -> list[Job]:
+        """List all pending or unapplied Ashby jobs."""
+        jobs = (
+            self.session.query(JobModel)
+            .filter(
+                or_(
+                    JobModel.ats_type == ATSType.ASHBY,
+                    JobModel.url.like("%ashbyhq.com%"),
+                ),
+                or_(JobModel.is_already_applied == False, JobModel.is_already_applied.is_(None)),
+                JobModel.status != ApplicationStatus.SUBMITTED,
+            )
+            .order_by(JobModel.id.asc())
+            .all()
+        )
+        return [_job_model_to_job(j) for j in jobs]
+
     def list_by_ids(self, job_ids: list[int]) -> list[Job]:
         """Fetch jobs by id, preserving the order of ``job_ids``."""
         if not job_ids:

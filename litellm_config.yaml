@@ -1,0 +1,9 @@
+litellm_settings:
+  drop_params: true
+
+model_list:
+  - model_name: "*"
+    litellm_params:
+      model: ollama_chat/qwen2.5-coder:1.5b
+      api_base: http://localhost:11434
+      drop_params: true

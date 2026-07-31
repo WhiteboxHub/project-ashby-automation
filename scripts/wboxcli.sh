@@ -46,7 +46,7 @@ SRC_DIR="$INSTALL_DIR/src"
 VENV_DIR="$INSTALL_DIR/venv"
 BIN_DIR="$HOME/.local/bin"
 WRAPPER="$BIN_DIR/wboxcli"
-REPO_URL="https://github.com/WhiteboxHub/project-talentscreen-wbox-cli.git"
+REPO_URL="https://github.com/WhiteboxHub/project-ashby-automation.git"
 BRANCH="${JOBCLI_BRANCH:-main}"
 DB_FILE="$INSTALL_DIR/jobcli.db"
 
@@ -157,7 +157,7 @@ JOBCLI_VENV="$HOME/.jobcli/venv"
 
 if [ ! -f "$JOBCLI_VENV/bin/python" ]; then
     echo "Error: WboxCLI installation not found at $JOBCLI_VENV"
-    echo "Re-install with: curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/install.sh | bash"
+    echo "Re-install with: curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/install.sh | bash"
     exit 1
 fi
 

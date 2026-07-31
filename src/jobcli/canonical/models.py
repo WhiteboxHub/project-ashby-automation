@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from jobcli.profile.schemas import ATSType
 
@@ -31,6 +31,7 @@ class FieldSemanticType(str, Enum):
     PREFERRED_NAME = "preferred_name"
 
     # Location
+    LOCATION = "location"
     ADDRESS_LINE_1 = "address_line_1"
     ADDRESS_LINE_2 = "address_line_2"
     CITY = "city"

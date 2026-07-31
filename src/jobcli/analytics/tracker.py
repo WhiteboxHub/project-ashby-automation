@@ -44,10 +44,7 @@ class SessionTracker:
             resp.raise_for_status()
         except Exception as e:
             import logging
-            logging.warning(f"Failed to send bulk application summary to {url}: {e}")
-            print(f"\n[Warning] Failed to send tracking data to {url}: {e}")
-            if 'resp' in locals() and hasattr(resp, 'text'):
-                print(f"Response details: {resp.text}")
+            logging.debug(f"Failed to send bulk application summary to {url}: {e}")
             pass
             
         self.applications.clear()

@@ -71,12 +71,12 @@ Requires **Python 3.10+** and **git**.
 
 **macOS / Linux:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/install.ps1 | iex
 ```
 
 ### Development Release (Dev)
@@ -85,12 +85,12 @@ irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/
 
 **macOS / Linux:**
 ```bash
-JOBCLI_BRANCH=dev curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/dev/scripts/install.sh | bash
+JOBCLI_BRANCH=dev curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/dev/scripts/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-$env:JOBCLI_BRANCH="dev"; irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/dev/scripts/install.ps1 | iex
+$env:JOBCLI_BRANCH="dev"; irm https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/dev/scripts/install.ps1 | iex
 ```
 
 This installs `wboxcli` globally — available from any terminal, just like `nvm` or `curl`. No virtual environment activation needed. After install, the interactive TUI launches automatically.
@@ -118,34 +118,34 @@ This installs `wboxcli` globally — available from any terminal, just like `nvm
 
 ```bash
 # macOS / Linux (Main)
-curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/install.sh | bash
 
 # macOS / Linux (Dev)
-JOBCLI_BRANCH=dev curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/dev/scripts/install.sh | bash
+JOBCLI_BRANCH=dev curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/dev/scripts/install.sh | bash
 ```
 ```powershell
 # Windows PowerShell (Main)
-irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/install.ps1 | iex
 
 # Windows PowerShell (Dev)
-$env:JOBCLI_BRANCH="dev"; irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/dev/scripts/install.ps1 | iex
+$env:JOBCLI_BRANCH="dev"; irm https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/dev/scripts/install.ps1 | iex
 ```
 
 **To uninstall** (you can also use the local `./scripts/wboxcli.sh uninstall` command):
 
 ```bash
 # macOS / Linux (Main)
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/uninstall.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/uninstall.sh)"
 
 # macOS / Linux (Dev)
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/dev/scripts/uninstall.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/dev/scripts/uninstall.sh)"
 ```
 ```powershell
 # Windows PowerShell (Main)
-irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/uninstall.ps1 | iex
 
 # Windows PowerShell (Dev)
-irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/dev/scripts/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/dev/scripts/uninstall.ps1 | iex
 ```
 
 ### Manual Install (For Development)
@@ -362,17 +362,17 @@ If `wboxcli uninstall` ever leaves files behind, the **bundled uninstall scripts
 
 ```bash
 # macOS / Linux (Main)
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/uninstall.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/uninstall.sh)"
 
 # macOS / Linux (Dev)
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/dev/scripts/uninstall.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/dev/scripts/uninstall.sh)"
 ```
 ```powershell
 # Windows PowerShell (Main)
-irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/main/scripts/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/main/scripts/uninstall.ps1 | iex
 
 # Windows PowerShell (Dev)
-irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/dev/scripts/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/dev/scripts/uninstall.ps1 | iex
 ```
 
 > The PATH entry pointing to `~/.local/bin` is left alone by every cleanup command — remove it from your shell profile (`~/.zshrc` / `~/.bashrc`) or Windows System Environment Variables if you want it gone too.
@@ -903,20 +903,20 @@ Other documentation (architecture guides, summaries, etc.) lives under `docs/` �
 ### Local extension dev loop
 
 1. Build in `project-talentscreen-autofill-extension` (`./build.sh` or `.\build.ps1`).
-2. Copy `dist/talentscreen-autofill-v*.zip` → `project-talentscreen-wbox-cli/extension/` (any `.zip` name works; newest `talentscreen-autofill*.zip` is used).
+2. Copy `dist/talentscreen-autofill-v*.zip` → `project-ashby-automation/extension/` (any `.zip` name works; newest `talentscreen-autofill*.zip` is used).
 3. CLI unpacks to **`~/.jobcli/extension_unpacked/`** on `wboxcli setup`, `wboxcli doctor`, and when `apply` resolves the extension directory (onboarding browser test uses the unpacked dir if present).
 
 Full commands: [docs/SETUP_WINDOWS_MAC.md](docs/SETUP_WINDOWS_MAC.md).
 
 ```bash
 # macOS / Linux — after copy ZIP into extension/
-cd project-talentscreen-wbox-cli && ./build.sh
+cd project-ashby-automation && ./build.sh
 export PYTHONPATH=src && python -m jobcli.cli.main doctor
 ```
 
 ```powershell
 # Windows — after copy ZIP into extension\
-cd project-talentscreen-wbox-cli; .\build.bat
+cd project-ashby-automation; .\build.bat
 $env:PYTHONPATH="src"; python -m jobcli.cli.main doctor
 ```
 

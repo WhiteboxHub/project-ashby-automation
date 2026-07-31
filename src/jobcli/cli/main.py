@@ -512,10 +512,10 @@ def uninstall(force: bool = typer.Option(False, "--force", "-f", help="Force uni
         if is_windows:
             console.print('  [cyan]Remove-Item -Recurse -Force "$env:USERPROFILE\\.jobcli"[/cyan]')
             console.print('  [cyan]Remove-Item -Force "$env:USERPROFILE\\.local\\bin\\wboxcli.cmd"[/cyan]')
-            console.print('  [dim](or)[/dim] [cyan]irm https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/dev/scripts/uninstall.ps1 | iex[/cyan]')
+            console.print('  [dim](or)[/dim] [cyan]irm https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/dev/scripts/uninstall.ps1 | iex[/cyan]')
         else:
             console.print('  [cyan]rm -rf ~/.jobcli ~/.local/bin/wboxcli[/cyan]')
-            console.print('  [dim](or)[/dim] [cyan]curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-talentscreen-wbox-cli/dev/scripts/uninstall.sh | bash[/cyan]')
+            console.print('  [dim](or)[/dim] [cyan]curl -fsSL https://raw.githubusercontent.com/WhiteboxHub/project-ashby-automation/dev/scripts/uninstall.sh | bash[/cyan]')
     else:
         console.print("\n[green]JobCLI has been fully uninstalled.[/green]")
 
@@ -1365,6 +1365,12 @@ def _run_apply(
     else:
         if checkpoint:
             jobs = jobs_from_checkpoint(session, checkpoint)
+        elif ats and ats.strip().lower() == "ashby":
+            jobs = job_repo.list_pending_ashby()
+            if sort.lower() == "newest":
+                jobs.reverse()
+            if limit:
+                jobs = jobs[:limit]
         else:
             # Resolve selected IDs from the pending set only. A stale command
             # therefore cannot re-apply a job which was already submitted.
@@ -1384,7 +1390,8 @@ def _run_apply(
                 clear_apply_checkpoint(session)
                 console.print("[yellow]No remaining jobs in the saved checkpoint (already finished).[/yellow]")
             else:
-                console.print("[yellow]No pending jobs found. Run [cyan]discover[/cyan] first.[/yellow]")
+                suffix = " for the selected Ashby filter" if ats else ""
+                console.print(f"[yellow]No pending jobs found{suffix}. Run [cyan]wboxcli discover[/cyan] first.[/yellow]")
             session.close()
             raise typer.Exit(0)
 
@@ -1722,6 +1729,22 @@ def apply(
         ats=ats,
         resume=continue_run,
         skip_resume_prompt=continue_run,
+    )
+
+
+@app.command("apply-ashby")
+def apply_ashby(
+    limit: Optional[int] = typer.Option(10, "--limit", "-l", help="Limit number of Ashby jobs to apply to"),
+    mode: str = typer.Option("auto", "--mode", "-m", help="Interaction mode: auto, supervised, manual"),
+    sort: str = typer.Option("oldest", "--sort", "-s", help="Sort order: oldest | newest"),
+) -> None:
+    """Apply to Ashby jobs using pure Playwright automation without LLM."""
+    _run_apply(
+        url=None,
+        limit=limit,
+        sort=sort,
+        mode=mode,
+        ats="ashby",
     )
 
 

@@ -56,8 +56,8 @@ class TestLooksLikeConfirmation:
             body_text="Thank you for applying! We will be in touch soon.",
             has_submit_btn=False,
         )
-        with patch("jobcli.orchestration.engine._submit_button_visible", return_value=False), \
-             patch("jobcli.orchestration.engine._live_validation_errors", return_value=[]):
+        with patch("jobcli.utils.form_sync._submit_button_visible", return_value=False), \
+             patch("jobcli.utils.form_sync._live_validation_errors", return_value=[]):
             strong, soft, signals = engine._looks_like_confirmation(
                 page,
                 pre_submit_url="https://boards.greenhouse.io/x/jobs/1/apply",
@@ -73,8 +73,8 @@ class TestLooksLikeConfirmation:
             body_text="",
             has_submit_btn=False,
         )
-        with patch("jobcli.orchestration.engine._submit_button_visible", return_value=False), \
-             patch("jobcli.orchestration.engine._live_validation_errors", return_value=[]):
+        with patch("jobcli.utils.form_sync._submit_button_visible", return_value=False), \
+             patch("jobcli.utils.form_sync._live_validation_errors", return_value=[]):
             strong, soft, signals = engine._looks_like_confirmation(
                 page,
                 pre_submit_url="https://jobs.lever.co/x/abc/apply",
@@ -90,8 +90,8 @@ class TestLooksLikeConfirmation:
             body_text="some neutral page text",
             has_submit_btn=True,  # button still there but URL changed
         )
-        with patch("jobcli.orchestration.engine._submit_button_visible", return_value=True), \
-             patch("jobcli.orchestration.engine._live_validation_errors", return_value=[]):
+        with patch("jobcli.utils.form_sync._submit_button_visible", return_value=True), \
+             patch("jobcli.utils.form_sync._live_validation_errors", return_value=[]):
             strong, soft, signals = engine._looks_like_confirmation(
                 page,
                 pre_submit_url="https://example.com/apply",
@@ -108,8 +108,8 @@ class TestLooksLikeConfirmation:
             body_text="application page content",
             has_submit_btn=False,
         )
-        with patch("jobcli.orchestration.engine._submit_button_visible", return_value=False), \
-             patch("jobcli.orchestration.engine._live_validation_errors", return_value=[]):
+        with patch("jobcli.utils.form_sync._submit_button_visible", return_value=False), \
+             patch("jobcli.utils.form_sync._live_validation_errors", return_value=[]):
             strong, soft, signals = engine._looks_like_confirmation(
                 page,
                 pre_submit_url="https://example.com/apply",
@@ -126,8 +126,8 @@ class TestLooksLikeConfirmation:
             body_text="please correct the errors below",
             has_submit_btn=True,
         )
-        with patch("jobcli.orchestration.engine._submit_button_visible", return_value=True), \
-             patch("jobcli.orchestration.engine._live_validation_errors", return_value=["Required field missing"]):
+        with patch("jobcli.utils.form_sync._submit_button_visible", return_value=True), \
+             patch("jobcli.utils.form_sync._live_validation_errors", return_value=["Required field missing"]):
             strong, soft, signals = engine._looks_like_confirmation(
                 page,
                 pre_submit_url="https://example.com/apply",
@@ -146,8 +146,8 @@ class TestLooksLikeConfirmation:
             body_text="application page content with no thank-you copy",
             has_submit_btn=True,
         )
-        with patch("jobcli.orchestration.engine._submit_button_visible", return_value=True), \
-             patch("jobcli.orchestration.engine._live_validation_errors", return_value=[]):
+        with patch("jobcli.utils.form_sync._submit_button_visible", return_value=True), \
+             patch("jobcli.utils.form_sync._live_validation_errors", return_value=[]):
             strong, soft, signals = engine._looks_like_confirmation(
                 page,
                 pre_submit_url="https://example.com/apply",

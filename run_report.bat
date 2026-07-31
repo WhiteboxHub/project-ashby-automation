@@ -1,5 +1,5 @@
 @echo off
-cd /d "C:\Users\sampa\OneDrive\Desktop\wbox-cli\project-talentscreen-wbox-cli"
+cd /d "C:\Users\sampa\OneDrive\Desktop\wbox-cli\project-ashby-automation"
 
 REM Use the venv wboxcli shim if available, otherwise fall back to venv Python
 IF EXIST "%USERPROFILE%\.jobcli\venv\Scripts\wboxcli.exe" (

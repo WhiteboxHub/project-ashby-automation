@@ -220,7 +220,7 @@ def _validate_wbox_and_extension(
         if zip_hint is None:
             err = (
                 "TalentScreen extension not found. Build the extension ZIP, then copy it to "
-                "project-talentscreen-wbox-cli/extension/ (any .zip name; see "
+                "project-ashby-automation/extension/ (any .zip name; see "
                 "docs/SETUP_WINDOWS_MAC.md). On Windows: .\\build.ps1 in the "
                 "autofill-extension repo, then Copy-Item dist\\*.zip to extension\\."
             )

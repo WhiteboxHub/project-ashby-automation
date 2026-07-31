@@ -46,6 +46,13 @@ class ResumeFieldMapper:
             return full if full else None
 
         # Location
+        elif semantic_type == FieldSemanticType.LOCATION:
+            city = self.resume.personal.city or ""
+            state = self.resume.personal.state or ""
+            country = self.resume.personal.country or ""
+            parts = [p for p in [city, state, country] if p]
+            return ", ".join(parts) if parts else self.resume.personal.address
+
         elif semantic_type == FieldSemanticType.ADDRESS_LINE_1:
             return self.resume.personal.address
 
@@ -204,6 +211,10 @@ _LABEL_TO_SEMANTIC_TYPE = {
     "middle name": FieldSemanticType.MIDDLE_NAME,
 
     # Location
+    "location": FieldSemanticType.LOCATION,
+    "current location": FieldSemanticType.LOCATION,
+    "your location": FieldSemanticType.LOCATION,
+    "where are you located": FieldSemanticType.LOCATION,
     "address": FieldSemanticType.ADDRESS_LINE_1,
     "street address": FieldSemanticType.ADDRESS_LINE_1,
     "address line 1": FieldSemanticType.ADDRESS_LINE_1,
