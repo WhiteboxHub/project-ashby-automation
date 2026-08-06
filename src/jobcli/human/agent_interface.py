@@ -1682,34 +1682,85 @@ class AgentInterface:
 
         self.console.print(
             Panel(
-                "[bold]Form has been pre-filled automatically.[/bold]\n\n"
-                "  [cyan]→[/cyan] Check all fields in the browser\n"
-                "  [cyan]→[/cyan] Fix anything that looks wrong or is left blank\n"
-                "  [cyan]→[/cyan] When everything looks good, press "
-                "[bold green]ENTER[/bold green] to start the submit countdown",
+                "[bold]Form pre-filled cleanly.[/bold]\n\n"
+                "  [cyan]→[/cyan] Select any remaining manual choices in Chrome\n"
+                "  [cyan]→[/cyan] Script will auto-submit & advance to next job automatically!",
                 title="[bold cyan]>>> REVIEW REQUIRED — CHECK BROWSER <<<[/bold cyan]",
                 border_style="cyan",
             )
         )
-        try:
-            # No timeout — wait until the human explicitly presses ENTER.
-            self._get_user_input(
-                "  [cyan]Press ENTER when ready to submit →[/cyan] ",
-                timeout_seconds=None,
-                default="",
-            )
-        except Exception:
-            pass
 
-        # 2-second countdown so the human has one last chance to abort (Ctrl+C).
-        self.console.print(
-            "\n  [dim]Submitting in [bold]2s[/bold]… "
-            "(press [bold green]ENTER[/bold green] to submit now)[/dim]"
-        )
-        try:
-            self._get_user_input("", timeout_seconds=2, default="")
-        except Exception:
-            pass
+        if not self.page:
+            return
+
+        # Poll Playwright page directly on the main event loop (no blocking stdin threads)
+        for _ in range(1200):  # poll up to 10 minutes
+            try:
+                # 1. Check URL or confirmation message
+                url = (self.page.url or "").lower()
+                if any(x in url for x in ["submitted", "thank", "confirmation", "success", "applied"]):
+                    self.console.print("\n[bold green]✓ Application submission confirmed! Moving to next job…[/bold green]\n")
+                    return
+
+                res = self.page.evaluate(r"""() => {
+                    const txt = document.body ? document.body.innerText.toLowerCase() : '';
+                    if (txt.includes('successfully submitted') ||
+                        txt.includes('thank you for applying') ||
+                        txt.includes('application submitted') ||
+                        txt.includes('application was successfully')) {
+                        return true;
+                    }
+
+                    // Check if all radio/checkbox groups on screen have an option selected
+                    const containers = document.querySelectorAll(
+                        'fieldset, [role="radiogroup"], [role="group"], ' +
+                        '[class*="field-entry"], [class*="form-question"], div[class*="field"]'
+                    );
+
+                    for (const grp of containers) {
+                        const rect = grp.getBoundingClientRect();
+                        if (rect.width < 5 || rect.height < 5) continue;
+
+                        const opts = [...grp.querySelectorAll('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]')];
+                        if (opts.length >= 1) {
+                            const checked = opts.some(o =>
+                                o.checked ||
+                                o.getAttribute('aria-checked') === 'true' ||
+                                o.getAttribute('aria-pressed') === 'true' ||
+                                o.classList.contains('selected') ||
+                                o.classList.contains('active')
+                            );
+                            if (!checked) return false;
+                        }
+
+                        const textInputs = [...grp.querySelectorAll('input[type="text"], input[type="email"], input[type="tel"], textarea')];
+                        for (const inp of textInputs) {
+                            if (inp.offsetParent !== null && (!inp.value || !inp.value.trim())) {
+                                return false;
+                            }
+                        }
+                    }
+                    return 'all_completed';
+                }""")
+
+                if res is True:
+                    self.console.print("\n[bold green]✓ Application submission confirmed! Moving to next job…[/bold green]\n")
+                    return
+
+                if res == 'all_completed':
+                    self.page.wait_for_timeout(600)  # Brief pause so choice is visible
+                    self.page.evaluate(r"""() => {
+                        const submitBtn = document.querySelector('button[type="submit"], button[data-test*="submit"]') ||
+                                          [...document.querySelectorAll('button')].find(b => (b.innerText || '').toLowerCase().includes('submit'));
+                        if (submitBtn) submitBtn.click();
+                    }""")
+                    self.page.wait_for_timeout(2000)
+                    self.console.print("\n[bold green]✓ Auto-submitted! Moving to next job…[/bold green]\n")
+                    return
+
+            except Exception:
+                pass
+            self.page.wait_for_timeout(500)
 
     def final_browser_pause(self) -> None:
         """Keep the browser open briefly, then auto-advance to the next job.

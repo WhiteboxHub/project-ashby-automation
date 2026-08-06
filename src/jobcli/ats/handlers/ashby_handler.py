@@ -75,6 +75,13 @@ _YES_NO_RULES: list[tuple[re.Pattern, str, str, Optional[str]]] = [
         "No",
         "_hardcoded_no",
     ),
+    # Transgender identification — default: No
+    (
+        re.compile(r"transgender", re.IGNORECASE),
+        "Yes",
+        "No",
+        "_hardcoded_no",
+    ),
 ]
 
 # Maps paragraph-question keyword patterns → how to build the answer from resume
@@ -230,16 +237,93 @@ class AshbyHandler(GenericATSHandler):
                     self.logger.warning(f"Ashby apply selector failed '{selector}': {e}", phase=ExecutionPhase.RULES)
         return super().find_apply_button()
 
+    def human_type_field(self, locator, value: str) -> bool:
+        """Type into a field with exact human-like visual cadence:
+        1. Smooth scroll element into center view
+        2. Focus element (200ms pause)
+        3. Apply green review highlight (#ecfdf5 bg, #10b981 border, glow shadow)
+        4. Type character by character with 40-80ms delay per char
+        5. Dispatch input and change events
+        6. Hold green highlight state for 500ms
+        7. Reset inline highlight and wait 500ms before next field.
+        """
+        import random
+        from jobcli.utils.fill_guard import should_skip_refill
+
+        if not value:
+            return False
+
+        if should_skip_refill(locator, value):
+            return False
+
+        try:
+            # 1. Smooth scroll element into view (center block)
+            locator.evaluate("el => el.scrollIntoView({ behavior: 'smooth', block: 'center' })")
+            self.page.wait_for_timeout(250)
+
+            # 2. Focus element (200ms)
+            locator.focus(timeout=1500)
+            self.page.wait_for_timeout(200)
+
+            # 3. Green Review Highlight state
+            locator.evaluate("""el => {
+                el.style.transition = 'all 0.3s ease';
+                el.style.border = '2px solid #10b981';
+                el.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.4)';
+                el.style.backgroundColor = '#ecfdf5';
+            }""")
+
+            # 4. Clear existing value
+            locator.fill("")
+
+            # 5. Type character by character with 40-80ms cadence
+            for char in value:
+                locator.type(char, delay=random.randint(40, 80))
+
+            # 6. Dispatch events
+            locator.evaluate("""el => {
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }""")
+
+            # 7. Hold green highlight state for 500ms
+            self.page.wait_for_timeout(500)
+
+            # 8. Reset inline highlight style gracefully
+            locator.evaluate("""el => {
+                el.style.border = '';
+                el.style.boxShadow = '';
+                el.style.backgroundColor = '';
+            }""")
+
+            # 9. Pause 500ms after field before moving to next field
+            self.page.wait_for_timeout(500)
+            return True
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"human_type_field fallback: {e}", phase=ExecutionPhase.RULES)
+            try:
+                locator.fill(value)
+                return True
+            except Exception:
+                return False
+
     def fill_form(self, resume_path: Optional[str] = None) -> dict[str, Any]:
         if self.logger:
-            self.logger.info("Filling Ashby form", phase=ExecutionPhase.RULES)
+            self.logger.info("Filling Ashby form (Human-Like Visible Mode)", phase=ExecutionPhase.RULES)
 
-        print("\n==================== Ashby fill_form START ====================")
+        print("\n==================== ASHBY AUTOFILL - HUMAN LIKE VISIBLE MODE ====================")
+        try:
+            self.page.evaluate("window.scrollTo(0, 0)")
+        except Exception:
+            pass
+        print("Parsing your resume... Autofilling key application fields.")
+        self.page.wait_for_timeout(1000)
 
         results: dict[str, Any] = {}
         personal = self.resume.personal
 
-        # 1. Upload Resume PDF
+        # ── Section 1: Resume Upload ──────────────────────────────────────────
         pdf_path = resume_path or getattr(self.resume, "pdf_path", None)
         if pdf_path:
             try:
@@ -248,9 +332,13 @@ class AshbyHandler(GenericATSHandler):
                     file_input.set_input_files(pdf_path)
                     results["resume"] = True
                     print(f"✓ Uploaded resume: {pdf_path}")
+                    self.page.wait_for_timeout(1500)  # Wait for upload animation to finish
             except Exception as e:
                 print(f"ERROR uploading resume: {e}")
 
+        self.page.wait_for_timeout(800)  # Section delay
+
+        # ── Section 2: Personal Information ──────────────────────────────────
         zip_val = personal.zip_code or "94566"
         location_val = (
             f"{personal.city}, {personal.state}" if personal.city and personal.state
@@ -260,7 +348,6 @@ class AshbyHandler(GenericATSHandler):
         linkedin_val = personal.linkedin or (personal.website if personal.website and "linkedin.com" in personal.website.lower() else "")
         github_val = personal.github or (personal.website if personal.website and "github.com" in personal.website.lower() else "")
 
-        # 2. Standard Text Inputs
         ashby_fields = [
             ("first_name",  "input[name='firstName'], input[id*='firstName'], input[autocomplete='given-name']",  personal.first_name),
             ("last_name",   "input[name='lastName'], input[id*='lastName'], input[autocomplete='family-name']",    personal.last_name),
@@ -280,7 +367,6 @@ class AshbyHandler(GenericATSHandler):
             try:
                 el = self.page.query_selector(selector)
                 if not el:
-                    # Label text fallback: find label matching key name
                     matched_selector = self.page.evaluate(r"""(k) => {
                         const labels = document.querySelectorAll('label, [class*="field-label"], [class*="FieldLabel"]');
                         for (const lbl of labels) {
@@ -303,36 +389,47 @@ class AshbyHandler(GenericATSHandler):
                         selector = matched_selector
 
                 if el:
-                    print(f"✓ Found {key}")
-                    self.humanized_fill(self.page.locator(selector).first, value)
-                    results[key] = True
+                    print(f"✓ Human Filling {key}...")
+                    loc = self.page.locator(selector).first
+                    success = self.human_type_field(loc, value)
+                    if success:
+                        results[key] = True
             except Exception as e:
                 print(f"ERROR while filling {key}: {e}")
                 results.setdefault(key, False)
 
-        # 3. Location Combobox
+        # Location Combobox
         if location_val:
             print(f"\nSelecting location: {location_val}")
             self.click_combobox("location", location_val)
             self.click_combobox("where are you located", location_val)
+            self.page.wait_for_timeout(500)
 
-        # 4. Generic Fallbacks & Yes/No Questions
-        print("\nRunning generic_fill_failed_fields()...")
-        results = self.generic_fill_failed_fields(results)
+        country = self.resume.personal.country or ""
+        if country:
+            print(f"\nSelecting country: {country}")
+            self.click_combobox("Which country do you intend to work from", country)
+            self.page.wait_for_timeout(500)
 
+        self.page.wait_for_timeout(800)  # Section delay
+
+        # ── Section 3: Questions & Experience ────────────────────────────────
         print("\nRunning fill_yes_no_questions()...")
         yes_no_count = self.fill_yes_no_questions()
         print(f"Yes/No answered: {yes_no_count}")
+        self.page.wait_for_timeout(500)
 
         print("\nRunning fill_radio_questions()...")
         radio_count = self.fill_radio_questions()
         print(f"Radio questions answered: {radio_count}")
+        self.page.wait_for_timeout(500)
 
         print("\nRunning fill_paragraph_questions()...")
         paragraph_count = self.fill_paragraph_questions()
         print(f"Paragraphs filled: {paragraph_count}")
+        self.page.wait_for_timeout(500)
 
-        # 5. Fill any remaining unfilled textareas
+        # Fill any remaining unfilled textareas
         default_bg = (
             getattr(self.resume, "summary", None) or
             "Software engineer experienced in building web applications, APIs, and automated systems."
@@ -341,16 +438,16 @@ class AshbyHandler(GenericATSHandler):
             try:
                 val = ta.input_value()
                 if not val or not val.strip():
-                    ta.fill(default_bg)
+                    loc = self.page.locator("textarea").first
+                    self.human_type_field(loc, default_bg)
             except Exception:
                 pass
 
-        country = self.resume.personal.country or ""
-        if country:
-            print(f"\nSelecting country: {country}")
-            self.click_combobox("Which country do you intend to work from", country)
+        # ── Section 4: Final Review Notification ────────────────────────────
+        print("\n✓ Autofill completed! Please review the information filled in for you.")
+        self.page.wait_for_timeout(2000)  # Keep visible 2 seconds before submit/review
 
-        print("\n==================== Ashby fill_form END ====================\n")
+        print("\n==================== ASHBY AUTOFILL END ====================\n")
 
         if self.logger:
             self.logger.info(
@@ -622,10 +719,26 @@ class AshbyHandler(GenericATSHandler):
                 return results;
             }""")
 
+            EEO_PATTERNS = re.compile(
+                r"gender|race|ethnic|veteran|disability|eeo|demographic|self-identif|voluntary|protected|sexual\s*orientation|\bage\b|current\s*age",
+                re.IGNORECASE,
+            )
+
             for item in radio_groups:
                 question = item.get("question", "")
                 options = item.get("options", [])
                 if not options:
+                    continue
+
+                if re.search(r"transgender", question, re.IGNORECASE):
+                    print(f"✓ Transgender question detected → selecting 'No'")
+                    success = self.click_option(question, "No")
+                    if success:
+                        answered += 1
+                    continue
+
+                if EEO_PATTERNS.search(question):
+                    print(f"⏩ Skipping EEO/demographic radio question for manual review: '{question[:60]}'")
                     continue
 
                 best_choice = self._resolve_radio_choice(question, options)
@@ -673,6 +786,12 @@ class AshbyHandler(GenericATSHandler):
         """
         q = question_text.strip()
         if not q:
+            return None
+
+        # Skip EEO / demographic questions so they are left for manual user review
+        if re.search(r"gender|race|ethnic|veteran|disability|eeo|demographic|self-identif|voluntary|protected|\bage\b|current\s*age", q, re.IGNORECASE):
+            if re.search(r"transgender", q, re.IGNORECASE):
+                return "No"
             return None
 
         wa = self.resume.work_authorization
@@ -1241,6 +1360,7 @@ class AshbyHandler(GenericATSHandler):
                 try:
                     res = target.evaluate(js, {"q": question, "v": value})
                     if res and res.get("ok"):
+                        self.page.wait_for_timeout(250)  # Visual pause after option selection
                         if self.logger:
                             self.logger.info(
                                 f"Ashby option click OK: '{question}' = '{value}' "

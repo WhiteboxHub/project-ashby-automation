@@ -1323,7 +1323,13 @@ class ApplicationEngine:
             
         # Reuse existing page if available, otherwise create new one
         if not hasattr(self, 'active_page') or self.active_page is None or self.active_page.is_closed():
+            old_pages = [p for p in self.context.pages if p.url in ("about:blank", "chrome://newtab/")]
             self.active_page = self.context.new_page()
+            for p in old_pages:
+                try:
+                    p.close()
+                except Exception:
+                    pass
             
         page = self.active_page
         status = ApplicationStatus.IN_PROGRESS
@@ -2676,8 +2682,8 @@ class ApplicationEngine:
 
             if apply_was_clicked:
                 try:
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.4)")
-                    page.wait_for_timeout(500)
+                    page.evaluate("window.scrollTo(0, 0)")
+                    page.wait_for_timeout(300)
                 except Exception:
                     pass
 
@@ -2705,18 +2711,19 @@ class ApplicationEngine:
                 rules_handler = ATSHandlerFactory.create_handler(
                     state.detected_ats, page, self.resume, logger
                 )
-                if state.detected_ats == ATSType.ASHBY or skip_llm:
+                if skip_llm or state.detected_ats == ATSType.ASHBY:
                     agent.show_phase_banner(f"Hybrid Extension + Playwright Automation ({state.detected_ats.value} - No LLM)")
                     if rules_handler:
                         rules_handler.fill_form(getattr(self.resume, "pdf_path", None))
 
-                        # ── Human review gate ───────────────────────────────────
-                        # Pause here so the human can check every field, correct
-                        # mismatches, and fill anything the rules left blank.
-                        # Only fires after ENTER + 2-second countdown.
-                        agent.pause_for_form_review()
+                    # ── Human review gate ───────────────────────────────────
+                    # Pause here so the human can check every field, correct
+                    # mismatches, and fill anything the rules left blank.
+                    # Only fires after ENTER + 2-second countdown.
+                    agent.pause_for_form_review()
 
-                        # ── Submit automatically with validation-error retry loop ──
+                    # ── Submit automatically with validation-error retry loop ──
+                    if rules_handler:
                         max_submit_attempts = 5
                         for attempt in range(1, max_submit_attempts + 1):
                             submitted = rules_handler.submit_application()
@@ -2736,7 +2743,7 @@ class ApplicationEngine:
                                 from rich.panel import Panel
                                 agent.console.print(
                                     Panel(
-                                        f"[bold red]Ashby validation errors detected "
+                                        f"[bold red]Validation errors detected "
                                         f"(attempt {attempt}/{max_submit_attempts}).[/bold red]\n\n"
                                         "  [yellow]→[/yellow] Fix the highlighted fields in the browser\n"
                                         "  [yellow]→[/yellow] Then press [bold green]ENTER[/bold green] "
@@ -2753,7 +2760,7 @@ class ApplicationEngine:
                                     )
                                 except Exception:
                                     pass
-                        return True
+                    return True
 
                 if self._last_extension_filled_count == 0:
                     if rules_handler and state.detected_ats not in (ATSType.UNKNOWN,):
