@@ -1747,15 +1747,54 @@ class AgentInterface:
                     self.console.print("\n[bold green]✓ Application submission confirmed! Moving to next job…[/bold green]\n")
                     return
 
-                if res == 'all_completed':
-                    self.page.wait_for_timeout(600)  # Brief pause so choice is visible
-                    self.page.evaluate(r"""() => {
-                        const submitBtn = document.querySelector('button[type="submit"], button[data-test*="submit"]') ||
-                                          [...document.querySelectorAll('button')].find(b => (b.innerText || '').toLowerCase().includes('submit'));
-                        if (submitBtn) submitBtn.click();
-                    }""")
+                if res == "all_completed":
+                    self.console.print("\n[bold green]✓ Form Complete[/bold green]")
+                    self.console.print("[cyan]Submitting in 2 seconds...[/cyan]")
                     self.page.wait_for_timeout(2000)
-                    self.console.print("\n[bold green]✓ Auto-submitted! Moving to next job…[/bold green]\n")
+
+                    # Double check after waiting
+                    verify = self.page.evaluate(r"""() => {
+                        const txt = document.body ? document.body.innerText.toLowerCase() : '';
+                        if (
+                            txt.includes("required") ||
+                            txt.includes("please fill")
+                        ){
+                            return false;
+                        }
+
+                        const required = [...document.querySelectorAll(
+                            'input[required], textarea[required], select[required]'
+                        )];
+
+                        return required.every(el => {
+                            if(el.type === "checkbox")
+                                return el.checked;
+
+                            return (el.value || "").trim() !== "";
+                        });
+                    }""")
+
+                    if not verify:
+                        self.console.print("[yellow]Form changed. Waiting again...[/yellow]")
+                        continue
+
+                    self.page.evaluate(r"""() => {
+                        const submitBtn =
+                            document.querySelector("button[type='submit']") ||
+                            document.querySelector("button[data-test*='submit']") ||
+                            [...document.querySelectorAll("button")]
+                            .find(b =>
+                                (b.innerText || "")
+                                .toLowerCase()
+                                .includes("submit")
+                            );
+
+                        if(submitBtn)
+                            submitBtn.click();
+                    }""")
+
+                    self.page.wait_for_timeout(2000)
+                    self.console.print("\n[bold green]✓ Auto-submitted! Moving to next job...[/bold green]\n")
                     return
 
             except Exception:
@@ -1779,6 +1818,9 @@ class AgentInterface:
             self._get_user_input("", timeout_seconds=2, default="")
         except Exception:
             pass
+    def all_required_fields_completed(self) -> bool:
+        return False
+    
 
     # ------------------------------------------------------------------
     # Internal helpers (unchanged from old HumanInterface, but private)
