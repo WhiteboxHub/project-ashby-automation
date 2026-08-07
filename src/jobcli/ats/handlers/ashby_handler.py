@@ -607,8 +607,10 @@ class AshbyHandler(GenericATSHandler):
                                     optionTexts.some(t => /^no$/i.test(t));
                     if (!isYesNo) continue;
 
+                    const rect = fs.getBoundingClientRect();
+                    const top = rect.top + window.scrollY;
                     seen.add(fs);
-                    results.push({ question: text, options: optionTexts });
+                    results.push({ question: text, options: optionTexts, top });
                 }
 
                 // Scan title elements for button-pair Yes/No
@@ -632,9 +634,11 @@ class AshbyHandler(GenericATSHandler):
                             const isYesNo = optionTexts.some(t => /^yes$/i.test(t)) &&
                                             optionTexts.some(t => /^no$/i.test(t));
                             if (isYesNo && !seen.has(container)) {
+                                const rect = titleEl.getBoundingClientRect();
+                                const top = rect.top + window.scrollY;
                                 seen.add(container);
                                 seen.add(titleEl);
-                                results.push({ question: text, options: optionTexts });
+                                results.push({ question: text, options: optionTexts, top });
                             }
                             break;
                         }
@@ -647,6 +651,9 @@ class AshbyHandler(GenericATSHandler):
 
             if not question_pairs:
                 return 0
+
+            # Sort questions strictly top-to-bottom by vertical Y coordinate
+            question_pairs.sort(key=lambda x: x.get("top", 0))
 
             if self.logger:
                 self.logger.info(
@@ -714,11 +721,15 @@ class AshbyHandler(GenericATSHandler):
                     }).filter(Boolean);
 
                     if (options.length >= 2) {
-                        results.push({ question: text, options });
+                        const top = rect.top + window.scrollY;
+                        results.push({ question: text, options, top });
                     }
                 }
                 return results;
             }""")
+
+            if radio_groups:
+                radio_groups.sort(key=lambda x: x.get("top", 0))
 
             EEO_PATTERNS = re.compile(
                 r"gender|race|ethnic|veteran|disability|eeo|demographic|self-identif|voluntary|protected|sexual\s*orientation|\bage\b|current\s*age",
