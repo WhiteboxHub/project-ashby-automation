@@ -1710,7 +1710,6 @@ class AgentInterface:
                         return true;
                     }
 
-                    // Check if all radio/checkbox groups on screen have an option selected
                     const containers = document.querySelectorAll(
                         'fieldset, [role="radiogroup"], [role="group"], ' +
                         '[class*="field-entry"], [class*="form-question"], div[class*="field"]'
@@ -1762,7 +1761,10 @@ class AgentInterface:
                                 text.includes("complete")
                             );
                         });
-                        if (!btn) return false;
+
+                        if (!btn)
+                            return false;
+
                         return !btn.disabled;
                     }""")
 
@@ -1770,14 +1772,20 @@ class AgentInterface:
                         self.console.print("[yellow]Form changed. Waiting again...[/yellow]")
                         continue
 
-                    try:
-                        self.page.click("button:has-text('Submit Application')")
-                    except Exception:
-                        self.page.evaluate(r"""() => {
-                            const submitBtn = document.querySelector('button[type="submit"]') ||
-                                              [...document.querySelectorAll('button')].find(b => (b.innerText || '').toLowerCase().includes('submit'));
-                            if (submitBtn) submitBtn.click();
-                        }""")
+                    self.page.evaluate(r"""() => {
+                        const buttons = [...document.querySelectorAll("button")];
+                        const btn = buttons.find(b => {
+                            const text = (b.innerText || "").trim().toLowerCase();
+                            return (
+                                text.includes("submit") ||
+                                text.includes("apply") ||
+                                text.includes("complete")
+                            );
+                        });
+
+                        if (btn)
+                            btn.click();
+                    }""")
 
                     self.page.wait_for_timeout(2000)
                     self.console.print("\n[bold green]✓ Auto Submitted![/bold green]\n")
