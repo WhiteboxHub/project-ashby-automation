@@ -1701,7 +1701,6 @@ class AgentInterface:
                 if any(x in url for x in ["submitted", "thank", "confirmation", "success", "applied"]):
                     self.console.print("\n[bold green]✓ Application submission confirmed! Moving to next job…[/bold green]\n")
                     return
-
                 res = self.page.evaluate(r"""() => {
                     const txt = document.body ? document.body.innerText.toLowerCase() : '';
                     if (txt.includes('successfully submitted') ||
@@ -1740,61 +1739,48 @@ class AgentInterface:
                             }
                         }
                     }
-                    return 'all_completed';
+                    return 'ready_to_submit';
                 }""")
 
                 if res is True:
                     self.console.print("\n[bold green]✓ Application submission confirmed! Moving to next job…[/bold green]\n")
                     return
 
-                if res == "all_completed":
+                if res == "ready_to_submit":
                     self.console.print("\n[bold green]✓ Form Complete[/bold green]")
                     self.console.print("[cyan]Submitting in 2 seconds...[/cyan]")
                     self.page.wait_for_timeout(2000)
 
                     # Double check after waiting
                     verify = self.page.evaluate(r"""() => {
-                        const txt = document.body ? document.body.innerText.toLowerCase() : '';
-                        if (
-                            txt.includes("required") ||
-                            txt.includes("please fill")
-                        ){
-                            return false;
-                        }
-
-                        const required = [...document.querySelectorAll(
-                            'input[required], textarea[required], select[required]'
-                        )];
-
-                        return required.every(el => {
-                            if(el.type === "checkbox")
-                                return el.checked;
-
-                            return (el.value || "").trim() !== "";
+                        const buttons = [...document.querySelectorAll("button")];
+                        const btn = buttons.find(b => {
+                            const text = (b.innerText || "").trim().toLowerCase();
+                            return (
+                                text.includes("submit") ||
+                                text.includes("apply") ||
+                                text.includes("complete")
+                            );
                         });
+                        if (!btn) return false;
+                        return !btn.disabled;
                     }""")
 
                     if not verify:
                         self.console.print("[yellow]Form changed. Waiting again...[/yellow]")
                         continue
 
-                    self.page.evaluate(r"""() => {
-                        const submitBtn =
-                            document.querySelector("button[type='submit']") ||
-                            document.querySelector("button[data-test*='submit']") ||
-                            [...document.querySelectorAll("button")]
-                            .find(b =>
-                                (b.innerText || "")
-                                .toLowerCase()
-                                .includes("submit")
-                            );
-
-                        if(submitBtn)
-                            submitBtn.click();
-                    }""")
+                    try:
+                        self.page.click("button:has-text('Submit Application')")
+                    except Exception:
+                        self.page.evaluate(r"""() => {
+                            const submitBtn = document.querySelector('button[type="submit"]') ||
+                                              [...document.querySelectorAll('button')].find(b => (b.innerText || '').toLowerCase().includes('submit'));
+                            if (submitBtn) submitBtn.click();
+                        }""")
 
                     self.page.wait_for_timeout(2000)
-                    self.console.print("\n[bold green]✓ Auto-submitted! Moving to next job...[/bold green]\n")
+                    self.console.print("\n[bold green]✓ Auto Submitted![/bold green]\n")
                     return
 
             except Exception:
