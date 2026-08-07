@@ -349,8 +349,8 @@ class AshbyHandler(GenericATSHandler):
         github_val = personal.github or (personal.website if personal.website and "github.com" in personal.website.lower() else "")
 
         ashby_fields = [
-            ("first_name",  "input[name='firstName'], input[id*='firstName'], input[autocomplete='given-name']",  personal.first_name),
-            ("last_name",   "input[name='lastName'], input[id*='lastName'], input[autocomplete='family-name']",    personal.last_name),
+            ("first_name",  "input[name='firstName'], input[name*='firstName'], input[id*='firstName'], input[autocomplete='given-name'], input[aria-label*='First Name'], input[placeholder*='First Name']",  personal.first_name),
+            ("last_name",   "input[name='lastName'], input[name*='lastName'], input[id*='lastName'], input[autocomplete='family-name'], input[aria-label*='Last Name'], input[placeholder*='Last Name']",    personal.last_name),
             ("email",       "input[name='email'], input[type='email'], input[id*='email']",                      personal.email),
             ("phone",       "input[name='phone'], input[name='phoneNumber'], input[type='tel']",                personal.phone),
             ("linkedin",    "input[name='linkedinUrl'], input[name*='linkedin'], input[id*='linkedin'], input[placeholder*='linkedin.com'], textarea[name*='linkedin'], textarea[id*='linkedin']", linkedin_val),
@@ -368,10 +368,11 @@ class AshbyHandler(GenericATSHandler):
                 el = self.page.query_selector(selector)
                 if not el:
                     matched_selector = self.page.evaluate(r"""(k) => {
+                        const searchTerm = k.replace(/_/g, ' ').toLowerCase();
                         const labels = document.querySelectorAll('label, [class*="field-label"], [class*="FieldLabel"]');
                         for (const lbl of labels) {
                             const text = (lbl.innerText || '').toLowerCase();
-                            if (text.includes(k)) {
+                            if (text.includes(searchTerm) || text.includes(k)) {
                                 const container = lbl.closest('div[class*="entry"], div[class*="field"], fieldset') || lbl.parentElement;
                                 if (container) {
                                     const inp = container.querySelector('input, textarea');
