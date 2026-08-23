@@ -211,31 +211,24 @@ class AshbyHandler(GenericATSHandler):
         if self.logger:
             self.logger.info("Looking for Ashby apply button", phase=ExecutionPhase.RULES)
 
-        # 1. If URL is already on the application form, wait for React/DOM to render inputs
+        # 1. If URL is already on the application form, return True directly to start filling
         try:
             current_url = (self.page.url or "").lower()
-            if "/application" in current_url or "ashbyhq.com" in current_url:
-                try:
-                    self.page.wait_for_selector(
-                        "input[name='name'], input[name='firstName'], input[name='first_name'], input[type='email'], [class*='ashby-application-form'], input[type='text']",
-                        timeout=5000,
-                        state="visible",
-                    )
-                except Exception:
-                    pass
+            if "/application" in current_url or "/apply" in current_url:
+                if self.logger:
+                    self.logger.info("Already on application form URL, proceeding directly.", phase=ExecutionPhase.RULES)
+                return True
         except Exception:
             pass
 
         # Check if the application form is ALREADY visible (no button needed)
         try:
             visible_inputs = self.page.locator(
-                "input[name='name']:visible, input[name='firstName']:visible, "
-                "input[name='first_name']:visible, input[type='email']:visible, "
-                "[class*='ashby-application-form']:visible, input[type='text']:visible"
+                "input, [class*='ashby-application-form'], [class*='application-form'], textarea"
             ).count()
             if visible_inputs >= 1:
                 if self.logger:
-                    self.logger.info("Form already visible, proceeding directly.", phase=ExecutionPhase.RULES)
+                    self.logger.info("Form elements detected, proceeding directly.", phase=ExecutionPhase.RULES)
                 return True
         except Exception:
             pass

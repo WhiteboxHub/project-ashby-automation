@@ -1488,26 +1488,22 @@ class ApplicationEngine:
             try:
                 current_url = (page.url or "").lower()
                 if "/application" in current_url or "/apply" in current_url or "ashbyhq.com" in current_url:
-                    try:
-                        page.wait_for_selector(
-                            "input[type='text'], input[type='email'], input[type='tel'], select, textarea, [class*='ashby-application-form']",
-                            timeout=4000,
-                            state="visible",
-                        )
-                    except Exception:
-                        pass
-
-                visible_inputs = page.locator(
-                    "input[type='text']:visible, input[type='email']:visible, "
-                    "input[type='tel']:visible, select:visible, textarea:visible"
-                ).count()
-                if visible_inputs >= 2:
                     page_already_has_form = True
                     logger.info(
-                        f"Detected {visible_inputs} visible form fields — "
-                        f"skipping Apply button search, page is already a form.",
+                        f"Direct application URL detected ({current_url[:60]}) — proceeding directly to form fill.",
                         phase=ExecutionPhase.RULES,
                     )
+                else:
+                    visible_inputs = page.locator(
+                        "input:not([type='hidden']):not([type='submit']), select, textarea, [class*='application-form']"
+                    ).count()
+                    if visible_inputs >= 1:
+                        page_already_has_form = True
+                        logger.info(
+                            f"Detected {visible_inputs} form fields — "
+                            f"skipping Apply button search, page is already a form.",
+                            phase=ExecutionPhase.RULES,
+                        )
             except Exception:
                 pass
             if page_already_has_form:
