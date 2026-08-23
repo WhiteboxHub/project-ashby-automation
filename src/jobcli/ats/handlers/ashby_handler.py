@@ -499,6 +499,11 @@ class AshbyHandler(GenericATSHandler):
         self.fill_hear_about_us()
         self.page.wait_for_timeout(600)
 
+        print("\nRunning fill_custom_inputs()...")
+        custom_count = self.fill_custom_inputs()
+        print(f"Custom fields filled: {custom_count}")
+        self.page.wait_for_timeout(600)
+
         print("\nRunning fill_paragraph_questions()...")
         paragraph_count = self.fill_paragraph_questions()
         print(f"Paragraphs filled: {paragraph_count}")
@@ -541,15 +546,62 @@ class AshbyHandler(GenericATSHandler):
 
     def is_success(self) -> bool:
         try:
-            if self.page.locator("text='Your application was successfully submitted'").is_visible(timeout=2000):
+            if self.page.locator("text='Your application was successfully submitted'").is_visible(timeout=1500):
                 return True
-            if self.page.locator("text='Application Submitted'").is_visible(timeout=2000):
+            if self.page.locator("text='Application Submitted'").is_visible(timeout=1500):
                 return True
-            if self.page.locator("text='Thank you for applying'").is_visible(timeout=2000):
+            if self.page.locator("text='Thank you for applying'").is_visible(timeout=1500):
+                return True
+            if self.page.locator("text*='successfully submitted'").is_visible(timeout=1500):
+                return True
+            if self.page.locator("[class*='success-message'], [class*='successMessage'], [class*='SuccessBanner']").is_visible(timeout=1500):
                 return True
         except Exception:
             pass
         return False
+
+    def has_unfilled_required_fields(self) -> list[str]:
+        """Return a list of visible required fields that remain empty or unanswered."""
+        try:
+            missing = self.page.evaluate(r"""() => {
+                const missingFields = [];
+                const requiredContainers = document.querySelectorAll(
+                    '[class*="field-entry"], [class*="form-field"], fieldset, [class*="ashby-application-form"]'
+                );
+
+                for (const container of requiredContainers) {
+                    const rect = container.getBoundingClientRect();
+                    if (rect.width < 2 || rect.height < 2) continue;
+
+                    const titleEl = container.querySelector('label, legend, strong, [class*="title"], [class*="label"]');
+                    const titleText = (titleEl ? titleEl.innerText : '').trim();
+                    const isRequired = titleText.includes('*') || 
+                                       container.querySelector('[aria-required="true"], [required], span.required, [class*="required"]');
+
+                    if (!isRequired) continue;
+
+                    // 1. Check text inputs
+                    const inputs = container.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="radio"]):not([type="checkbox"]), textarea');
+                    for (const inp of inputs) {
+                        if (!inp.value || !inp.value.trim()) {
+                            missingFields.push(titleText.replace(/\*/g, '').trim() || 'Required Input');
+                        }
+                    }
+
+                    // 2. Check radio / checkbox groups
+                    const radios = container.querySelectorAll('input[type="radio"], input[type="checkbox"], button[role="radio"], button[aria-pressed]');
+                    if (radios.length >= 2) {
+                        const anyChecked = [...radios].some(r => r.checked || r.getAttribute('aria-checked') === 'true' || r.getAttribute('aria-pressed') === 'true');
+                        if (!anyChecked) {
+                            missingFields.push(titleText.replace(/\*/g, '').trim() || 'Required Choice');
+                        }
+                    }
+                }
+                return [...new Set(missingFields)];
+            }""")
+            return missing or []
+        except Exception:
+            return []
 
     def has_validation_errors(self) -> bool:
         """Check if red error banner or required field errors exist on screen."""
@@ -844,11 +896,7 @@ class AshbyHandler(GenericATSHandler):
                     success = self.click_option(question, "No")
                     if success:
                         answered += 1
-                        self.page.wait_for_timeout(800)
-                    continue
-
-                if EEO_PATTERNS.search(question):
-                    print(f"⏩ Skipping EEO/demographic radio question for manual review: '{question[:60]}'")
+                        self.page.wait_for_timeout(400)
                     continue
 
                 best_choice = self._resolve_radio_choice(question, options)
@@ -857,7 +905,7 @@ class AshbyHandler(GenericATSHandler):
                     if success:
                         answered += 1
                         print(f"✓ Ashby Radio: '{question[:60]}' → '{best_choice}'")
-                        self.page.wait_for_timeout(800)
+                        self.page.wait_for_timeout(400)
 
         except Exception as e:
             if self.logger:
@@ -939,17 +987,83 @@ class AshbyHandler(GenericATSHandler):
                     return True
                 except Exception:
                     pass
+        except Exception:
+            pass
+        return False
+
+    def fill_custom_inputs(self) -> int:
+        """Fill common custom questions like earliest start date, salary range, and notice period."""
+        filled = 0
+        try:
+            # 1. Earliest start date
+            start_date_inputs = self.page.query_selector_all(
+                "input[placeholder*='date'], input[placeholder*='Date'], input[name*='start'], input[id*='start'], input[aria-label*='start']"
+            )
+            for inp in start_date_inputs:
+                try:
+                    val = inp.input_value()
+                    if not val or not val.strip():
+                        self.filler.fill_field_visibly(self.page.locator(f"#{inp.get_attribute('id')}") if inp.get_attribute('id') else self.page.locator("input[placeholder*='date']").first, "Immediately", field_name="Earliest Start Date")
+                        filled += 1
+                        print("✓ Auto-filled Earliest Start Date: Immediately")
+                except Exception:
+                    pass
+
+            # 2. Expected base salary range / compensation
+            salary_containers = self.page.query_selector_all(
+                "div:has-text('salary'), div:has-text('compensation'), div:has-text('Salary'), div:has-text('Compensation')"
+            )
+            self.click_combobox("salary", "$150,000")
+            self.click_combobox("compensation", "$150,000")
+            self.click_combobox("expected base", "$150,000")
+
+            salary_inputs = self.page.query_selector_all(
+                "input[name*='salary'], input[id*='salary'], input[placeholder*='salary'], input[placeholder*='Salary'], input[name*='compensation'], input[id*='compensation']"
+            )
+            for inp in salary_inputs:
+                try:
+                    val = inp.input_value()
+                    if not val or not val.strip():
+                        inp.fill("$150,000")
+                        filled += 1
+                        print("✓ Auto-filled Expected Salary: $150,000")
+                except Exception:
+                    pass
 
         except Exception as e:
             if self.logger:
-                self.logger.warning(f"fill_hear_about_us error: {e}", phase=ExecutionPhase.RULES)
-        return False
+                self.logger.warning(f"fill_custom_inputs error: {e}", phase=ExecutionPhase.RULES)
+        return filled
 
     def _resolve_radio_choice(self, question: str, option_texts: list[str]) -> str:
         """Select the optimal choice for a multi-choice radio question based on experience tiers."""
         cleaned_opts = [t.strip() for t in option_texts if t and t.strip()]
         if not cleaned_opts:
             return ""
+
+        # Check for Veteran Status
+        if re.search(r"veteran", question, re.IGNORECASE):
+            for opt in cleaned_opts:
+                if re.search(r"not\s+a\s+(protected\s+)?veteran|not\s+a\s+veteran", opt, re.IGNORECASE):
+                    return opt
+            for opt in cleaned_opts:
+                if re.search(r"decline|do\s*not\s*wish", opt, re.IGNORECASE):
+                    return opt
+
+        # Check for Disability Status
+        if re.search(r"disabilit", question, re.IGNORECASE):
+            for opt in cleaned_opts:
+                if re.search(r"no,\s*i\s*(do\s*not|don't)\s*have|not\s+disabled|no\s+disability", opt, re.IGNORECASE):
+                    return opt
+            for opt in cleaned_opts:
+                if re.search(r"decline|do\s*not\s*wish", opt, re.IGNORECASE):
+                    return opt
+
+        # Check for Gender / Race / Demographic EEO
+        if re.search(r"gender|race|ethnic|sexual\s*orientation|pronoun", question, re.IGNORECASE):
+            for opt in cleaned_opts:
+                if re.search(r"decline|do\s*not\s*wish|prefer\s*not|choose\s*not", opt, re.IGNORECASE):
+                    return opt
 
         # Check for "How did you hear about us?" or referral/source question
         if re.search(r"hear\s+about|how\s+did\s+you|where\s+did\s+you|source|find\s+us", question, re.IGNORECASE):
