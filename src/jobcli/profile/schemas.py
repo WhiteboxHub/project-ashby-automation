@@ -243,6 +243,67 @@ class ResumeData(BaseModel):
     skills: list[str] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
 
+    @field_validator("skills", mode="before")
+    @classmethod
+    def _coerce_skills(cls, v: Any) -> list[str]:
+        if not v:
+            return []
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        if isinstance(v, list):
+            result: list[str] = []
+            for item in v:
+                if isinstance(item, str):
+                    if item.strip():
+                        result.append(item.strip())
+                elif isinstance(item, dict):
+                    keywords = item.get("keywords") or item.get("skills")
+                    if isinstance(keywords, list):
+                        for kw in keywords:
+                            if isinstance(kw, str) and kw.strip():
+                                result.append(kw.strip())
+                            elif kw:
+                                result.append(str(kw).strip())
+                    elif isinstance(keywords, str) and keywords.strip():
+                        result.append(keywords.strip())
+                    name = item.get("name") or item.get("title") or item.get("category") or item.get("skill")
+                    if name and isinstance(name, str) and name.strip() and name.strip() not in result:
+                        result.append(name.strip())
+                    elif not keywords and not name:
+                        for val in item.values():
+                            if isinstance(val, str) and val.strip():
+                                result.append(val.strip())
+                            elif isinstance(val, list):
+                                for sub in val:
+                                    if isinstance(sub, str) and sub.strip():
+                                        result.append(sub.strip())
+                elif item is not None:
+                    result.append(str(item).strip())
+            return result
+        return []
+
+    @field_validator("certifications", mode="before")
+    @classmethod
+    def _coerce_certifications(cls, v: Any) -> list[str]:
+        if not v:
+            return []
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        if isinstance(v, list):
+            result: list[str] = []
+            for item in v:
+                if isinstance(item, str):
+                    if item.strip():
+                        result.append(item.strip())
+                elif isinstance(item, dict):
+                    name = item.get("name") or item.get("title") or item.get("certificate")
+                    if name:
+                        result.append(str(name).strip())
+                elif item is not None:
+                    result.append(str(item).strip())
+            return result
+        return []
+
     @model_validator(mode="before")
     @classmethod
     def _coerce_json_resume_format(cls, data: Any) -> Any:  # noqa: ANN401

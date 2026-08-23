@@ -1486,6 +1486,17 @@ class ApplicationEngine:
             # sites that land directly on the form without an Apply button).
             page_already_has_form = False
             try:
+                current_url = (page.url or "").lower()
+                if "/application" in current_url or "/apply" in current_url or "ashbyhq.com" in current_url:
+                    try:
+                        page.wait_for_selector(
+                            "input[type='text'], input[type='email'], input[type='tel'], select, textarea, [class*='ashby-application-form']",
+                            timeout=4000,
+                            state="visible",
+                        )
+                    except Exception:
+                        pass
+
                 visible_inputs = page.locator(
                     "input[type='text']:visible, input[type='email']:visible, "
                     "input[type='tel']:visible, select:visible, textarea:visible"
@@ -2714,7 +2725,17 @@ class ApplicationEngine:
                 if skip_llm or state.detected_ats == ATSType.ASHBY:
                     agent.show_phase_banner(f"Hybrid Extension + Playwright Automation ({state.detected_ats.value} - No LLM)")
                     if rules_handler:
-                        rules_handler.fill_form(getattr(self.resume, "pdf_path", None))
+                        pdf_to_use = resume_pdf_path or getattr(self, "resume_pdf_path", None)
+                        if not pdf_to_use:
+                            try:
+                                from jobcli.storage.repositories import UserRepository
+                                user_repo = UserRepository(self.session)
+                                user_data = user_repo.get_user_data()
+                                if user_data and getattr(user_data, "pdf_path", None):
+                                    pdf_to_use = user_data.pdf_path
+                            except Exception:
+                                pass
+                        rules_handler.fill_form(pdf_to_use)
 
                     # ── Human review gate ───────────────────────────────────
                     # Pause here so the human can check every field, correct

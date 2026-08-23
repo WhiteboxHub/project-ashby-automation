@@ -210,11 +210,34 @@ class AshbyHandler(GenericATSHandler):
         if self.logger:
             self.logger.info("Looking for Ashby apply button", phase=ExecutionPhase.RULES)
 
+        # 1. If URL is already on the application form, wait for React/DOM to render inputs
+        try:
+            current_url = (self.page.url or "").lower()
+            if "/application" in current_url or "ashbyhq.com" in current_url:
+                try:
+                    self.page.wait_for_selector(
+                        "input[name='name'], input[name='firstName'], input[name='first_name'], input[type='email'], [class*='ashby-application-form'], input[type='text']",
+                        timeout=5000,
+                        state="visible",
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # Check if the application form is ALREADY visible (no button needed)
-        if self.page.query_selector("input[name='firstName']") or self.page.query_selector("[class*='ashby-application-form']"):
-            if self.logger:
-                self.logger.info("Form already visible, proceeding directly.", phase=ExecutionPhase.RULES)
-            return True
+        try:
+            visible_inputs = self.page.locator(
+                "input[name='name']:visible, input[name='firstName']:visible, "
+                "input[name='first_name']:visible, input[type='email']:visible, "
+                "[class*='ashby-application-form']:visible, input[type='text']:visible"
+            ).count()
+            if visible_inputs >= 1:
+                if self.logger:
+                    self.logger.info("Form already visible, proceeding directly.", phase=ExecutionPhase.RULES)
+                return True
+        except Exception:
+            pass
 
         selectors = [
             "a:has-text('Apply')",
@@ -237,15 +260,121 @@ class AshbyHandler(GenericATSHandler):
                     self.logger.warning(f"Ashby apply selector failed '{selector}': {e}", phase=ExecutionPhase.RULES)
         return super().find_apply_button()
 
+    def smooth_glide_to_element(self, locator_or_selector, duration_ms: int = 700) -> None:
+        """Smoothly glide the viewport to center the target element with ease-in-out curve."""
+        try:
+            js = f"""(el) => {{
+                if (!el) return;
+                const rect = el.getBoundingClientRect();
+                const targetY = window.scrollY + rect.top - (window.innerHeight / 2) + (rect.height / 2);
+                const startY = window.scrollY;
+                const diff = targetY - startY;
+                if (Math.abs(diff) < 15) return;
+
+                const duration = {duration_ms};
+                const startTime = performance.now();
+
+                return new Promise(resolve => {{
+                    function step(currentTime) {{
+                        const elapsed = currentTime - startTime;
+                        const progress = Math.min(elapsed / duration, 1);
+                        const ease = progress < 0.5
+                            ? 4 * progress * progress * progress
+                            : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+                        window.scrollTo(0, startY + (diff * ease));
+                        if (progress < 1) {{
+                            requestAnimationFrame(step);
+                        }} else {{
+                            resolve();
+                        }}
+                    }}
+                    requestAnimationFrame(step);
+                }});
+            }}"""
+            if hasattr(locator_or_selector, "evaluate"):
+                locator_or_selector.evaluate(js)
+            elif isinstance(locator_or_selector, str):
+                el = self.page.query_selector(locator_or_selector)
+                if el:
+                    el.evaluate(js)
+            self.page.wait_for_timeout(duration_ms + 100)
+        except Exception:
+            pass
+
+    def smooth_scan_review(self, duration_ms: int = 2500) -> None:
+        """Slowly and smoothly scroll down the entire application form for full visual review."""
+        try:
+            print("\n🔍 Slowly reviewing all completed fields...")
+            self.page.evaluate(f"""() => {{
+                const maxScroll = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) - window.innerHeight;
+                if (maxScroll <= 0) return;
+                const duration = {duration_ms};
+                const startTime = performance.now();
+                window.scrollTo(0, 0);
+
+                return new Promise(resolve => {{
+                    function step(currentTime) {{
+                        const elapsed = currentTime - startTime;
+                        const progress = Math.min(elapsed / duration, 1);
+                        const ease = progress < 0.5
+                            ? 2 * progress * progress
+                            : -1 + (4 - 2 * progress) * progress;
+                        window.scrollTo(0, maxScroll * ease);
+                        if (progress < 1) {{
+                            requestAnimationFrame(step);
+                        }} else {{
+                            resolve();
+                        }}
+                    }}
+                    requestAnimationFrame(step);
+                }});
+            }}""")
+            self.page.wait_for_timeout(duration_ms + 300)
+        except Exception:
+            pass
+
+    def smooth_glide_to_y(self, target_y: float, duration_ms: int = 700) -> None:
+        """Smoothly glide the viewport to a vertical Y coordinate with slow-motion ease."""
+        try:
+            js = f"""(targetY) => {{
+                const target = Math.max(0, targetY - (window.innerHeight / 2));
+                const startY = window.scrollY;
+                const diff = target - startY;
+                if (Math.abs(diff) < 20) return;
+
+                const duration = {duration_ms};
+                const startTime = performance.now();
+
+                return new Promise(resolve => {{
+                    function step(now) {{
+                        const elapsed = now - startTime;
+                        const progress = Math.min(elapsed / duration, 1);
+                        const ease = progress < 0.5 
+                            ? 4 * progress * progress * progress 
+                            : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+                        window.scrollTo(0, startY + (diff * ease));
+                        if (progress < 1) {{
+                            requestAnimationFrame(step);
+                        }} else {{
+                            resolve();
+                        }}
+                    }}
+                    requestAnimationFrame(step);
+                }});
+            }}"""
+            self.page.evaluate(js, target_y)
+            self.page.wait_for_timeout(duration_ms + 150)
+        except Exception:
+            pass
+
     def human_type_field(self, locator, value: str) -> bool:
-        """Type into a field with exact human-like visual cadence:
-        1. Smooth scroll element into center view
-        2. Focus element (200ms pause)
-        3. Apply green review highlight (#ecfdf5 bg, #10b981 border, glow shadow)
-        4. Type character by character with 40-80ms delay per char
-        5. Dispatch input and change events
-        6. Hold green highlight state for 500ms
-        7. Reset inline highlight and wait 500ms before next field.
+        """Type into a field with smooth human-like slow motion:
+        1. Slow-motion smooth glide to center view (750ms)
+        2. Animated focus glow (blue #3b82f6)
+        3. Clear existing value
+        4. Type character by character with 45-75ms delay
+        5. Flash green success glow (#10b981 border, #ecfdf5 bg)
+        6. Pause 800ms so the user can easily see each filled answer!
         """
         import random
         from jobcli.utils.fill_guard import should_skip_refill
@@ -257,47 +386,48 @@ class AshbyHandler(GenericATSHandler):
             return False
 
         try:
-            # 1. Smooth scroll element into view (center block)
-            locator.evaluate("el => el.scrollIntoView({ behavior: 'smooth', block: 'center' })")
-            self.page.wait_for_timeout(250)
+            # 1. Slow-motion smooth glide into view
+            self.smooth_glide_to_element(locator, duration_ms=750)
 
-            # 2. Focus element (200ms)
-            locator.focus(timeout=1500)
-            self.page.wait_for_timeout(200)
-
-            # 3. Green Review Highlight state
+            # 2. Focus element with animated blue focus glow
             locator.evaluate("""el => {
-                el.style.transition = 'all 0.3s ease';
-                el.style.border = '2px solid #10b981';
-                el.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.4)';
-                el.style.backgroundColor = '#ecfdf5';
+                el.style.transition = 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
+                el.style.border = '2px solid #3b82f6';
+                el.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.25)';
+                el.style.backgroundColor = '#eff6ff';
             }""")
+            locator.focus(timeout=1500)
+            self.page.wait_for_timeout(300)
 
-            # 4. Clear existing value
+            # 3. Clear existing value
             locator.fill("")
 
-            # 5. Type character by character with 40-80ms cadence
+            # 4. Type character by character with natural typing cadence
             for char in value:
-                locator.type(char, delay=random.randint(40, 80))
+                locator.type(char, delay=random.randint(45, 75))
 
-            # 6. Dispatch events
+            # 5. Dispatch events
             locator.evaluate("""el => {
                 el.dispatchEvent(new Event('input', { bubbles: true }));
                 el.dispatchEvent(new Event('change', { bubbles: true }));
             }""")
 
-            # 7. Hold green highlight state for 500ms
-            self.page.wait_for_timeout(500)
+            # 6. Green Success Highlight state
+            locator.evaluate("""el => {
+                el.style.border = '2px solid #10b981';
+                el.style.boxShadow = '0 0 0 4px rgba(16, 185, 129, 0.3)';
+                el.style.backgroundColor = '#ecfdf5';
+            }""")
+            # 7. Generous pause so the user comfortably sees the filled value!
+            self.page.wait_for_timeout(800)
 
-            # 8. Reset inline highlight style gracefully
+            # 8. Reset style gracefully
             locator.evaluate("""el => {
                 el.style.border = '';
                 el.style.boxShadow = '';
                 el.style.backgroundColor = '';
             }""")
-
-            # 9. Pause 500ms after field before moving to next field
-            self.page.wait_for_timeout(500)
+            self.page.wait_for_timeout(300)
             return True
         except Exception as e:
             if self.logger:
@@ -312,12 +442,9 @@ class AshbyHandler(GenericATSHandler):
         if self.logger:
             self.logger.info("Filling Ashby form (Human-Like Visible Mode)", phase=ExecutionPhase.RULES)
 
-        print("\n==================== ASHBY AUTOFILL - HUMAN LIKE VISIBLE MODE ====================")
-        try:
-            self.page.evaluate("window.scrollTo(0, 0)")
-        except Exception:
-            pass
-        print("Parsing your resume... Autofilling key application fields.")
+        print("\n==================== ASHBY AUTOFILL - SLOW MOTION FROM FIRST TO LAST ====================")
+        self.smooth_glide_to_y(0, duration_ms=800)
+        print("Parsing your resume... Autofilling key application fields with slow-motion step-by-step scrolling.")
         self.page.wait_for_timeout(1000)
 
         results: dict[str, Any] = {}
@@ -329,16 +456,17 @@ class AshbyHandler(GenericATSHandler):
             try:
                 file_input = self.page.query_selector("input[type='file']")
                 if file_input:
+                    self.smooth_glide_to_element(file_input, duration_ms=750)
                     file_input.set_input_files(pdf_path)
                     results["resume"] = True
                     print(f"✓ Uploaded resume: {pdf_path}")
-                    self.page.wait_for_timeout(1500)  # Wait for upload animation to finish
+                    self.page.wait_for_timeout(1800)  # Wait for upload animation to finish
             except Exception as e:
                 print(f"ERROR uploading resume: {e}")
 
         self.page.wait_for_timeout(800)  # Section delay
 
-        # ── Section 2: Personal Information ──────────────────────────────────
+        # ── Section 2: Personal Information (Slow Motion Field-by-Field) ─────
         zip_val = personal.zip_code or "94566"
         location_val = (
             f"{personal.city}, {personal.state}" if personal.city and personal.state
@@ -348,16 +476,22 @@ class AshbyHandler(GenericATSHandler):
         linkedin_val = personal.linkedin or (personal.website if personal.website and "linkedin.com" in personal.website.lower() else "")
         github_val = personal.github or (personal.website if personal.website and "github.com" in personal.website.lower() else "")
 
+        full_name = f"{personal.first_name} {personal.last_name}".strip()
+
         ashby_fields = [
-            ("first_name",  "input[name='firstName'], input[name*='firstName'], input[id*='firstName'], input[autocomplete='given-name'], input[aria-label*='First Name'], input[placeholder*='First Name']",  personal.first_name),
-            ("last_name",   "input[name='lastName'], input[name*='lastName'], input[id*='lastName'], input[autocomplete='family-name'], input[aria-label*='Last Name'], input[placeholder*='Last Name']",    personal.last_name),
-            ("email",       "input[name='email'], input[type='email'], input[id*='email']",                      personal.email),
-            ("phone",       "input[name='phone'], input[name='phoneNumber'], input[type='tel']",                personal.phone),
-            ("linkedin",    "input[name='linkedinUrl'], input[name*='linkedin'], input[id*='linkedin'], input[placeholder*='linkedin.com'], textarea[name*='linkedin'], textarea[id*='linkedin']", linkedin_val),
-            ("github",      "input[name='githubUrl'], input[name*='github'], input[id*='github'], textarea[name*='github']",              github_val),
-            ("portfolio",   "input[name='portfolioUrl'], input[name*='website'], input[name*='portfolio'], textarea[name*='website']",     personal.portfolio or personal.website),
-            ("zip_code",    "input[name*='postalCode'], input[name*='postal_code'], input[name*='zipCode'], input[name*='zip'], input[id*='postalCode'], input[id*='zip'], input[autocomplete='postal-code']", zip_val),
-            ("location",    "input[name*='location'], input[id*='location']", location_val),
+            ("name",        "input[name='name'], input[name*='name']:not([name*='first']):not([name*='last']):not([name*='user']):not([name*='file']), input[id='name'], input[id*='name']:not([id*='first']):not([id*='last']), input[autocomplete='name'], input[aria-label*='Full Name'], input[aria-label*='Name']:not([aria-label*='First']):not([aria-label*='Last']), input[placeholder*='Full Name'], input[placeholder*='Full name']", full_name),
+            ("first_name",  "input[name='firstName'], input[name='first_name'], input[name*='firstName'], input[name*='first_name'], input[id*='firstName'], input[id*='first_name'], input[autocomplete='given-name'], input[aria-label*='First Name'], input[placeholder*='First Name']",  personal.first_name),
+            ("last_name",   "input[name='lastName'], input[name='last_name'], input[name*='lastName'], input[name*='last_name'], input[id*='lastName'], input[id*='last_name'], input[autocomplete='family-name'], input[aria-label*='Last Name'], input[placeholder*='Last Name']",    personal.last_name),
+            ("email",       "input[name='email'], input[type='email'], input[name*='email'], input[id*='email'], input[placeholder*='email'], input[aria-label*='email']",                      personal.email),
+            ("phone",       "input[name='phone'], input[name='phoneNumber'], input[name*='phone'], input[type='tel'], input[id*='phone'], input[placeholder*='phone']",                personal.phone),
+            ("linkedin",    "input[name='linkedinUrl'], input[name*='linkedin'], input[id*='linkedin'], input[placeholder*='linkedin.com'], input[placeholder*='LinkedIn'], textarea[name*='linkedin'], textarea[id*='linkedin']", linkedin_val),
+            ("github",      "input[name='githubUrl'], input[name*='github'], input[id*='github'], input[placeholder*='github.com'], input[placeholder*='GitHub'], textarea[name*='github']",              github_val),
+            ("portfolio",   "input[name='portfolioUrl'], input[name*='website'], input[name*='portfolio'], input[placeholder*='Portfolio'], input[placeholder*='Website'], textarea[name*='website']",     personal.portfolio or personal.website),
+            ("zip_code",    "input[name*='postalCode'], input[name*='postal_code'], input[name*='zipCode'], input[name*='zip'], input[id*='postalCode'], input[id*='zip'], input[autocomplete='postal-code'], input[placeholder*='Zip'], input[placeholder*='Postal']", zip_val),
+            ("address",     "input[name*='address'], input[id*='address'], input[placeholder*='Address']", personal.address or location_val),
+            ("city",        "input[name*='city'], input[id*='city'], input[placeholder*='City']", personal.city or "San Francisco"),
+            ("state",       "input[name*='state'], input[id*='state'], input[placeholder*='State'], input[name*='region']", personal.state or "CA"),
+            ("location",    "input[name*='location'], input[id*='location'], input[placeholder*='Location']", location_val),
         ]
 
         for key, selector, value in ashby_fields:
@@ -395,42 +529,47 @@ class AshbyHandler(GenericATSHandler):
                     success = self.human_type_field(loc, value)
                     if success:
                         results[key] = True
+                        self.page.wait_for_timeout(800)
             except Exception as e:
                 print(f"ERROR while filling {key}: {e}")
                 results.setdefault(key, False)
 
-        # Location Combobox
+        # Location Combobox with Slow-Motion Glide
         if location_val:
             print(f"\nSelecting location: {location_val}")
             self.click_combobox("location", location_val)
             self.click_combobox("where are you located", location_val)
-            self.page.wait_for_timeout(500)
+            self.page.wait_for_timeout(800)
 
         country = self.resume.personal.country or ""
         if country:
             print(f"\nSelecting country: {country}")
             self.click_combobox("Which country do you intend to work from", country)
-            self.page.wait_for_timeout(500)
+            self.page.wait_for_timeout(800)
 
         self.page.wait_for_timeout(800)  # Section delay
 
-        # ── Section 3: Questions & Experience ────────────────────────────────
+        # ── Section 3: Questions & Experience (Slow Motion Question-by-Question)
         print("\nRunning fill_yes_no_questions()...")
         yes_no_count = self.fill_yes_no_questions()
         print(f"Yes/No answered: {yes_no_count}")
-        self.page.wait_for_timeout(500)
+        self.page.wait_for_timeout(800)
 
         print("\nRunning fill_radio_questions()...")
         radio_count = self.fill_radio_questions()
         print(f"Radio questions answered: {radio_count}")
-        self.page.wait_for_timeout(500)
+        self.page.wait_for_timeout(800)
+
+        # Hardcoded 'How did you hear about us?' → 'Company Website'
+        self.fill_hear_about_us()
+        self.page.wait_for_timeout(800)
 
         print("\nRunning fill_paragraph_questions()...")
         paragraph_count = self.fill_paragraph_questions()
         print(f"Paragraphs filled: {paragraph_count}")
-        self.page.wait_for_timeout(500)
+        self.page.wait_for_timeout(800)
 
-        # Fill any remaining unfilled textareas
+        # Fill any remaining unfilled textareas with slow motion
         default_bg = (
             getattr(self.resume, "summary", None) or
             "Software engineer experienced in building web applications, APIs, and automated systems."
@@ -441,11 +580,11 @@ class AshbyHandler(GenericATSHandler):
                 if not val or not val.strip():
                     loc = self.page.locator("textarea").first
                     self.human_type_field(loc, default_bg)
+                    self.page.wait_for_timeout(800)
             except Exception:
                 pass
 
-        # ── Section 4: Final Review Notification ────────────────────────────
-        print("\n✓ Autofill completed! Please review the information filled in for you.")
+        print("\n✓ Autofill completed from first to last question!")
         self.page.wait_for_timeout(2000)  # Keep visible 2 seconds before submit/review
 
         print("\n==================== ASHBY AUTOFILL END ====================\n")
@@ -479,6 +618,8 @@ class AshbyHandler(GenericATSHandler):
             if self.page.locator("text='Missing entry for required field'").is_visible(timeout=1000):
                 return True
             if self.page.locator("[class*='error-message'], [class*='errorMessage'], [class*='field-error']").is_visible(timeout=1000):
+                return True
+            if self.page.locator("[aria-invalid='true']").count() > 0:
                 return True
         except Exception:
             pass
@@ -516,6 +657,7 @@ class AshbyHandler(GenericATSHandler):
                 pass
 
     def submit_application(self) -> bool:
+        button_clicked = False
         for selector in [
             "button[type='submit']",
             "button:has-text('Submit Application')",
@@ -528,7 +670,8 @@ class AshbyHandler(GenericATSHandler):
                 if el and el.is_visible():
                     print(f"✓ Clicking submit button: {selector}")
                     el.click(timeout=5000)
-                    self.page.wait_for_timeout(2000)
+                    button_clicked = True
+                    self.page.wait_for_timeout(2500)
 
                     # Check if Ashby displayed red validation errors
                     if self.has_validation_errors():
@@ -536,15 +679,19 @@ class AshbyHandler(GenericATSHandler):
                         self.auto_fix_validation_errors()
                         # Re-click submit
                         el.click(timeout=5000)
-                        self.page.wait_for_timeout(2000)
+                        self.page.wait_for_timeout(2500)
 
-                    if not self.has_validation_errors() or self.is_success():
-                        print("✓ Form submitted cleanly (0 validation errors on screen)")
+                    if self.is_success():
+                        print("✓ Form submitted cleanly (Application Success screen)")
+                        return True
+                    if not self.has_validation_errors():
                         return True
             except Exception as e:
                 if self.logger:
                     self.logger.warning(f"Ashby submit failed '{selector}': {e}", phase=ExecutionPhase.RULES)
-        return not self.has_validation_errors()
+        if button_clicked and (self.is_success() or not self.has_validation_errors()):
+            return True
+        return False
 
     def handle_multi_step(self, state: ApplicationState) -> bool:
         return super().handle_multi_step(state)
@@ -667,6 +814,10 @@ class AshbyHandler(GenericATSHandler):
                 if not answer:
                     continue
 
+                top_y = pair.get("top", 0)
+                if top_y:
+                    self.smooth_glide_to_y(top_y, duration_ms=750)
+
                 success = self.click_option(question_text, answer)
                 if success:
                     answered += 1
@@ -675,6 +826,7 @@ class AshbyHandler(GenericATSHandler):
                             f"Ashby Yes/No: '{question_text[:60]}' → '{answer}'",
                             phase=ExecutionPhase.RULES,
                         )
+                    self.page.wait_for_timeout(800)
                 else:
                     if self.logger:
                         self.logger.warning(
@@ -708,7 +860,7 @@ class AshbyHandler(GenericATSHandler):
                     const text = (legend ? legend.innerText : grp.getAttribute('aria-label') || '').trim();
                     if (!text) continue;
 
-                    const radios = [...grp.querySelectorAll('input[type="radio"], [role="radio"]')];
+                    const radios = [...grp.querySelectorAll('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]')];
                     if (radios.length < 2) continue;
 
                     const isChecked = radios.some(r => r.checked || r.getAttribute('aria-checked') === 'true');
@@ -742,11 +894,16 @@ class AshbyHandler(GenericATSHandler):
                 if not options:
                     continue
 
+                top_y = item.get("top", 0)
+                if top_y:
+                    self.smooth_glide_to_y(top_y, duration_ms=750)
+
                 if re.search(r"transgender", question, re.IGNORECASE):
                     print(f"✓ Transgender question detected → selecting 'No'")
                     success = self.click_option(question, "No")
                     if success:
                         answered += 1
+                        self.page.wait_for_timeout(800)
                     continue
 
                 if EEO_PATTERNS.search(question):
@@ -759,6 +916,7 @@ class AshbyHandler(GenericATSHandler):
                     if success:
                         answered += 1
                         print(f"✓ Ashby Radio: '{question[:60]}' → '{best_choice}'")
+                        self.page.wait_for_timeout(800)
 
         except Exception as e:
             if self.logger:
@@ -766,11 +924,97 @@ class AshbyHandler(GenericATSHandler):
 
         return answered
 
+    def fill_hear_about_us(self) -> bool:
+        """Hardcode answer 'Company Website' for 'How did you hear about us?' and source questions."""
+        try:
+            print("\nChecking 'How did you hear about us?' question...")
+            clicked = self.page.evaluate(r"""() => {
+                const isHearAboutQuestion = (text) => {
+                    if (!text) return false;
+                    const t = text.toLowerCase();
+                    return t.includes("hear about") || t.includes("how did you hear") || 
+                           t.includes("where did you hear") || t.includes("how did you find") ||
+                           (t.includes("source") && !t.includes("source code"));
+                };
+
+                const isCompanyWebsite = (text) => {
+                    if (!text) return false;
+                    const t = text.toLowerCase();
+                    return t.includes("company website") || t.includes("website") || 
+                           t.includes("career page") || t.includes("careers page") || 
+                           t.includes("company site") || t.includes("job board");
+                };
+
+                // 1. Scan fieldsets, groups, and question containers
+                const containers = document.querySelectorAll('fieldset, [role="group"], [role="radiogroup"], [class*="field-entry"], [class*="form-field"], [class*="ashby-application-form"], div');
+                for (const container of containers) {
+                    const titleEl = container.querySelector('legend, label, [class*="title"], [class*="label"], strong, h3, h4, p');
+                    const titleText = titleEl ? titleEl.innerText : '';
+                    if (!isHearAboutQuestion(titleText)) continue;
+
+                    // Look for checkboxes or radio options inside this container
+                    const options = container.querySelectorAll('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="radio"], button, label');
+                    for (const opt of options) {
+                        const labelText = opt.innerText || (opt.parentElement ? opt.parentElement.innerText : '') || opt.getAttribute('value') || '';
+                        if (isCompanyWebsite(labelText)) {
+                            const target = opt.tagName && opt.tagName.toLowerCase() === 'input' && opt.parentElement && opt.parentElement.tagName.toLowerCase() === 'label' ? opt.parentElement : opt;
+                            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            target.click();
+                            return true;
+                        }
+                    }
+                }
+
+                // 2. Direct search for any checkbox or radio labeled "Company Website"
+                const allLabels = document.querySelectorAll('label, [class*="label"], [class*="option"]');
+                for (const lbl of allLabels) {
+                    const text = (lbl.innerText || '').trim();
+                    if (/^company\s+website$/i.test(text) || (text.toLowerCase().includes("company website") && text.length < 35)) {
+                        const input = lbl.querySelector('input') || (lbl.getAttribute('for') ? document.getElementById(lbl.getAttribute('for')) : null);
+                        const target = input || lbl;
+                        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        target.click();
+                        return true;
+                    }
+                }
+
+                return false;
+            }""")
+
+            if clicked:
+                print("✓ Selected 'Company Website' for 'How did you hear about us?'")
+                self.page.wait_for_timeout(500)
+                return True
+
+            # Check for combobox or select
+            self.click_combobox("How did you hear about us", "Company Website")
+            self.click_combobox("Source", "Company Website")
+
+            # Check for text input
+            for inp in self.page.query_selector_all("input[name*='hear'], input[id*='hear'], input[placeholder*='hear about']"):
+                try:
+                    inp.fill("Company Website")
+                    print("✓ Typed 'Company Website' into source field")
+                    return True
+                except Exception:
+                    pass
+
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"fill_hear_about_us error: {e}", phase=ExecutionPhase.RULES)
+        return False
+
     def _resolve_radio_choice(self, question: str, option_texts: list[str]) -> str:
         """Select the optimal choice for a multi-choice radio question based on experience tiers."""
         cleaned_opts = [t.strip() for t in option_texts if t and t.strip()]
         if not cleaned_opts:
             return ""
+
+        # Check for "How did you hear about us?" or referral/source question
+        if re.search(r"hear\s+about|how\s+did\s+you|where\s+did\s+you|source|find\s+us", question, re.IGNORECASE):
+            for opt in cleaned_opts:
+                if re.search(r"company\s*website|website|career|job\s*board", opt, re.IGNORECASE):
+                    return opt
 
         # Priority 1: Expert / Advanced / High experience keywords
         expert_patterns = [
@@ -1263,7 +1507,13 @@ class AshbyHandler(GenericATSHandler):
                     }
                 }
                 if (best) {
-                    try { best.scrollIntoView({block: 'center'}); } catch (e) {}
+                    try {
+                        const target = best.closest('label') || best;
+                        target.scrollIntoView({behavior: 'smooth', block: 'center'});
+                        target.style.transition = 'all 0.3s ease';
+                        target.style.outline = '2px solid #10b981';
+                        target.style.boxShadow = '0 0 0 4px rgba(16, 185, 129, 0.3)';
+                    } catch (e) {}
                     const isOn = () => best.checked === true ||
                         best.getAttribute('aria-checked') === 'true';
                     if (!isOn()) { try { best.click(); } catch (e) {} }
@@ -1321,7 +1571,7 @@ class AshbyHandler(GenericATSHandler):
                                 const vScore = Math.max(
                                     matchesButtonText(txt),
                                     matchesButtonText(aria),
-                                );
+                                    );
                                 if (vScore === 0) continue;
                                 const total = qScore * 10 + vScore;
                                 if (total > buttonBestScore) {
@@ -1336,7 +1586,12 @@ class AshbyHandler(GenericATSHandler):
                     if (buttonBest) break;
                 }
                 if (buttonBest) {
-                    try { buttonBest.scrollIntoView({block: 'center'}); } catch (e) {}
+                    try {
+                        buttonBest.scrollIntoView({behavior: 'smooth', block: 'center'});
+                        buttonBest.style.transition = 'all 0.3s ease';
+                        buttonBest.style.border = '2px solid #10b981';
+                        buttonBest.style.boxShadow = '0 0 0 4px rgba(16, 185, 129, 0.3)';
+                    } catch (e) {}
                     const wasPressed = () => (
                         buttonBest.getAttribute('aria-pressed') === 'true' ||
                         buttonBest.getAttribute('aria-checked') === 'true' ||
@@ -1346,9 +1601,6 @@ class AshbyHandler(GenericATSHandler):
                         buttonBest.classList.contains('is-selected')
                     );
                     try { buttonBest.click(); } catch (e) {}
-                    // Some Ashby buttons swallow plain .click() and only
-                    // react to PointerEvent sequences — try that as a
-                    // second attempt before giving up.
                     if (!wasPressed()) {
                         try {
                             const fire = (type) => buttonBest.dispatchEvent(
@@ -1360,7 +1612,7 @@ class AshbyHandler(GenericATSHandler):
                         } catch (e) {}
                     }
                     return {
-                        ok: true, // we issued a click on the right button
+                        ok: true,
                         score: buttonBestScore,
                         mode: 'button',
                         confirmed: wasPressed(),
@@ -1396,11 +1648,7 @@ class AshbyHandler(GenericATSHandler):
     # Ashby combobox / dropdown handler (fixed JS)
     # ------------------------------------------------------------------
     def click_combobox(self, question: str, value: str) -> bool:
-        """Handle Ashby combobox/dropdown fields.
-
-        Fixed from original: corrected indentation (now a class method),
-        fixed JS setTimeout typo, and fixed unclosed trim() parenthesis.
-        """
+        """Handle Ashby combobox/dropdown fields with smooth human motion and visual feedback."""
         if not question or not value:
             return False
 
@@ -1427,9 +1675,17 @@ class AshbyHandler(GenericATSHandler):
                     while (container) {
                         const combo = container.querySelector(
                             '[role="combobox"], button[aria-haspopup="listbox"], ' +
-                            'button[aria-haspopup="true"], select'
+                            'button[aria-haspopup="true"], input[role="combobox"], select, input[placeholder*="location" i]'
                         );
                         if (combo) {
+                            // Smooth scroll into view
+                            combo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            
+                            // Visual focus highlight
+                            combo.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+                            combo.style.border = '2px solid #3b82f6';
+                            combo.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.25)';
+
                             // Handle native <select>
                             if (combo.tagName === 'SELECT') {
                                 const options = [...combo.options];
@@ -1441,6 +1697,8 @@ class AshbyHandler(GenericATSHandler):
                                 if (match) {
                                     combo.value = match.value;
                                     combo.dispatchEvent(new Event('change', {bubbles: true}));
+                                    combo.style.border = '2px solid #10b981';
+                                    combo.style.boxShadow = '0 0 0 4px rgba(16, 185, 129, 0.3)';
                                     return true;
                                 }
                             } else {
@@ -1448,26 +1706,29 @@ class AshbyHandler(GenericATSHandler):
                                 combo.click();
                                 return new Promise(resolve => {
                                     setTimeout(() => {
-                                        const options = [...document.querySelectorAll('[role="option"]')];
+                                        const options = [...document.querySelectorAll('[role="option"], [class*="option"], [class*="suggestion"]')];
                                         const match = options.find(o =>
                                             (o.innerText || '').toLowerCase().trim() === value
                                         );
-                                        if (match) {
-                                            match.click();
-                                            resolve(true);
-                                        } else {
-                                            // Try partial match
-                                            const partial = options.find(o =>
-                                                (o.innerText || '').toLowerCase().includes(value)
-                                            );
-                                            if (partial) {
-                                                partial.click();
+                                        const target = match || options.find(o => (o.innerText || '').toLowerCase().includes(value)) || (options.length > 0 ? options[0] : null);
+                                        if (target) {
+                                            target.style.transition = 'all 0.2s ease';
+                                            target.style.backgroundColor = '#ecfdf5';
+                                            target.style.border = '1px solid #10b981';
+                                            setTimeout(() => {
+                                                target.click();
+                                                combo.style.border = '2px solid #10b981';
+                                                combo.style.boxShadow = '0 0 0 4px rgba(16, 185, 129, 0.3)';
+                                                setTimeout(() => {
+                                                    combo.style.border = '';
+                                                    combo.style.boxShadow = '';
+                                                }, 500);
                                                 resolve(true);
-                                            } else {
-                                                resolve(false);
-                                            }
+                                            }, 200);
+                                        } else {
+                                            resolve(false);
                                         }
-                                    }, 350);
+                                    }, 400);
                                 });
                             }
                         }
