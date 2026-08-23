@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from jobcli.profile.schemas import ApplicationState, ExecutionPhase, ResumeData
 from jobcli.ats.handlers.generic_handler import GenericATSHandler
+from jobcli.automation.visible_filler import VisibleFormFiller, VisibleMotionConfig
 
 
 # ---------------------------------------------------------------------------
@@ -367,84 +368,31 @@ class AshbyHandler(GenericATSHandler):
         except Exception:
             pass
 
-    def human_type_field(self, locator, value: str) -> bool:
-        """Type into a field with smooth human-like slow motion:
-        1. Slow-motion smooth glide to center view (750ms)
-        2. Animated focus glow (blue #3b82f6)
-        3. Clear existing value
-        4. Type character by character with 45-75ms delay
-        5. Flash green success glow (#10b981 border, #ecfdf5 bg)
-        6. Pause 800ms so the user can easily see each filled answer!
-        """
-        import random
-        from jobcli.utils.fill_guard import should_skip_refill
-
-        if not value:
-            return False
-
-        if should_skip_refill(locator, value):
-            return False
-
-        try:
-            # 1. Slow-motion smooth glide into view
-            self.smooth_glide_to_element(locator, duration_ms=750)
-
-            # 2. Focus element with animated blue focus glow
-            locator.evaluate("""el => {
-                el.style.transition = 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
-                el.style.border = '2px solid #3b82f6';
-                el.style.boxShadow = '0 0 0 4px rgba(59, 130, 246, 0.25)';
-                el.style.backgroundColor = '#eff6ff';
-            }""")
-            locator.focus(timeout=1500)
-            self.page.wait_for_timeout(300)
-
-            # 3. Clear existing value
-            locator.fill("")
-
-            # 4. Type character by character with natural typing cadence
-            for char in value:
-                locator.type(char, delay=random.randint(45, 75))
-
-            # 5. Dispatch events
-            locator.evaluate("""el => {
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-            }""")
-
-            # 6. Green Success Highlight state
-            locator.evaluate("""el => {
-                el.style.border = '2px solid #10b981';
-                el.style.boxShadow = '0 0 0 4px rgba(16, 185, 129, 0.3)';
-                el.style.backgroundColor = '#ecfdf5';
-            }""")
-            # 7. Generous pause so the user comfortably sees the filled value!
-            self.page.wait_for_timeout(800)
-
-            # 8. Reset style gracefully
-            locator.evaluate("""el => {
-                el.style.border = '';
-                el.style.boxShadow = '';
-                el.style.backgroundColor = '';
-            }""")
-            self.page.wait_for_timeout(300)
-            return True
-        except Exception as e:
-            if self.logger:
-                self.logger.warning(f"human_type_field fallback: {e}", phase=ExecutionPhase.RULES)
-            try:
-                locator.fill(value)
-                return True
-            except Exception:
-                return False
+    def human_type_field(self, locator, value: str, field_name: str = "Input Field") -> bool:
+        """Type into a field using the VisibleFormFiller engine."""
+        if not hasattr(self, "filler") or not self.filler:
+            self.filler = VisibleFormFiller(self.page, VisibleMotionConfig())
+        return self.filler.fill_field_visibly(locator, value, field_name=field_name)
 
     def fill_form(self, resume_path: Optional[str] = None) -> dict[str, Any]:
         if self.logger:
-            self.logger.info("Filling Ashby form (Human-Like Visible Mode)", phase=ExecutionPhase.RULES)
+            self.logger.info("Filling Ashby form (Visible Step-by-Step Animation Mode)", phase=ExecutionPhase.RULES)
 
-        print("\n==================== ASHBY AUTOFILL - SLOW MOTION FROM FIRST TO LAST ====================")
+        print("\n==================== ASHBY AUTOFILL - VISIBLE STEP-BY-STEP MODE ====================")
+        self.filler = VisibleFormFiller(self.page, VisibleMotionConfig(
+            type_delay_ms=60,
+            field_start_pause_ms=400,
+            field_complete_pause_ms=600,
+            scroll_duration_ms=600,
+            scroll_settle_ms=400,
+            enable_hud=True,
+        ))
+
+        # ── Estimate total applicable fields for HUD progress ───────────────
+        estimated_fields = 8
+        self.filler.inject_hud(total_fields=estimated_fields)
         self.smooth_glide_to_y(0, duration_ms=800)
-        print("Parsing your resume... Autofilling key application fields with slow-motion step-by-step scrolling.")
+        print("Parsing your resume... Autofilling key application fields with slow-motion visible pacing.")
         self.page.wait_for_timeout(1000)
 
         results: dict[str, Any] = {}
@@ -454,17 +402,16 @@ class AshbyHandler(GenericATSHandler):
         pdf_path = resume_path or getattr(self.resume, "pdf_path", None)
         if pdf_path:
             try:
-                file_input = self.page.query_selector("input[type='file']")
-                if file_input:
-                    self.smooth_glide_to_element(file_input, duration_ms=750)
-                    file_input.set_input_files(pdf_path)
-                    results["resume"] = True
-                    print(f"✓ Uploaded resume: {pdf_path}")
-                    self.page.wait_for_timeout(1800)  # Wait for upload animation to finish
+                file_input = self.page.locator("input[type='file']").first
+                if file_input.is_visible(timeout=1000) or self.page.query_selector("input[type='file']"):
+                    success = self.filler.upload_resume_visibly(file_input, pdf_path, field_index=1)
+                    if success:
+                        results["resume"] = True
+                        print(f"✓ Uploaded resume: {pdf_path}")
             except Exception as e:
                 print(f"ERROR uploading resume: {e}")
 
-        self.page.wait_for_timeout(800)  # Section delay
+        self.page.wait_for_timeout(600)  # Section delay
 
         # ── Section 2: Personal Information (Slow Motion Field-by-Field) ─────
         zip_val = personal.zip_code or "94566"
@@ -479,28 +426,29 @@ class AshbyHandler(GenericATSHandler):
         full_name = f"{personal.first_name} {personal.last_name}".strip()
 
         ashby_fields = [
-            ("name",        "input[name='name'], input[name*='name']:not([name*='first']):not([name*='last']):not([name*='user']):not([name*='file']), input[id='name'], input[id*='name']:not([id*='first']):not([id*='last']), input[autocomplete='name'], input[aria-label*='Full Name'], input[aria-label*='Name']:not([aria-label*='First']):not([aria-label*='Last']), input[placeholder*='Full Name'], input[placeholder*='Full name']", full_name),
-            ("first_name",  "input[name='firstName'], input[name='first_name'], input[name*='firstName'], input[name*='first_name'], input[id*='firstName'], input[id*='first_name'], input[autocomplete='given-name'], input[aria-label*='First Name'], input[placeholder*='First Name']",  personal.first_name),
-            ("last_name",   "input[name='lastName'], input[name='last_name'], input[name*='lastName'], input[name*='last_name'], input[id*='lastName'], input[id*='last_name'], input[autocomplete='family-name'], input[aria-label*='Last Name'], input[placeholder*='Last Name']",    personal.last_name),
-            ("email",       "input[name='email'], input[type='email'], input[name*='email'], input[id*='email'], input[placeholder*='email'], input[aria-label*='email']",                      personal.email),
-            ("phone",       "input[name='phone'], input[name='phoneNumber'], input[name*='phone'], input[type='tel'], input[id*='phone'], input[placeholder*='phone']",                personal.phone),
-            ("linkedin",    "input[name='linkedinUrl'], input[name*='linkedin'], input[id*='linkedin'], input[placeholder*='linkedin.com'], input[placeholder*='LinkedIn'], textarea[name*='linkedin'], textarea[id*='linkedin']", linkedin_val),
-            ("github",      "input[name='githubUrl'], input[name*='github'], input[id*='github'], input[placeholder*='github.com'], input[placeholder*='GitHub'], textarea[name*='github']",              github_val),
-            ("portfolio",   "input[name='portfolioUrl'], input[name*='website'], input[name*='portfolio'], input[placeholder*='Portfolio'], input[placeholder*='Website'], textarea[name*='website']",     personal.portfolio or personal.website),
-            ("zip_code",    "input[name*='postalCode'], input[name*='postal_code'], input[name*='zipCode'], input[name*='zip'], input[id*='postalCode'], input[id*='zip'], input[autocomplete='postal-code'], input[placeholder*='Zip'], input[placeholder*='Postal']", zip_val),
-            ("address",     "input[name*='address'], input[id*='address'], input[placeholder*='Address']", personal.address or location_val),
-            ("city",        "input[name*='city'], input[id*='city'], input[placeholder*='City']", personal.city or "San Francisco"),
-            ("state",       "input[name*='state'], input[id*='state'], input[placeholder*='State'], input[name*='region']", personal.state or "CA"),
-            ("location",    "input[name*='location'], input[id*='location'], input[placeholder*='Location']", location_val),
+            ("Name",        "input[name='name'], input[name*='name']:not([name*='first']):not([name*='last']):not([name*='user']):not([name*='file']), input[id='name'], input[id*='name']:not([id*='first']):not([id*='last']), input[autocomplete='name'], input[aria-label*='Full Name'], input[aria-label*='Name']:not([aria-label*='First']):not([aria-label*='Last']), input[placeholder*='Full Name'], input[placeholder*='Full name']", full_name),
+            ("First Name",  "input[name='firstName'], input[name='first_name'], input[name*='firstName'], input[name*='first_name'], input[id*='firstName'], input[id*='first_name'], input[autocomplete='given-name'], input[aria-label*='First Name'], input[placeholder*='First Name']",  personal.first_name),
+            ("Last Name",   "input[name='lastName'], input[name='last_name'], input[name*='lastName'], input[name*='last_name'], input[id*='lastName'], input[id*='last_name'], input[autocomplete='family-name'], input[aria-label*='Last Name'], input[placeholder*='Last Name']",    personal.last_name),
+            ("Email",       "input[name='email'], input[type='email'], input[name*='email'], input[id*='email'], input[placeholder*='email'], input[aria-label*='email']",                      personal.email),
+            ("Phone",       "input[name='phone'], input[name='phoneNumber'], input[name*='phone'], input[type='tel'], input[id*='phone'], input[placeholder*='phone']",                personal.phone),
+            ("LinkedIn",    "input[name='linkedinUrl'], input[name*='linkedin'], input[id*='linkedin'], input[placeholder*='linkedin.com'], input[placeholder*='LinkedIn'], textarea[name*='linkedin'], textarea[id*='linkedin']", linkedin_val),
+            ("GitHub",      "input[name='githubUrl'], input[name*='github'], input[id*='github'], input[placeholder*='github.com'], input[placeholder*='GitHub'], textarea[name*='github']",              github_val),
+            ("Portfolio",   "input[name='portfolioUrl'], input[name*='website'], input[name*='portfolio'], input[placeholder*='Portfolio'], input[placeholder*='Website'], textarea[name*='website']",     personal.portfolio or personal.website),
+            ("Zip Code",    "input[name*='postalCode'], input[name*='postal_code'], input[name*='zipCode'], input[name*='zip'], input[id*='postalCode'], input[id*='zip'], input[autocomplete='postal-code'], input[placeholder*='Zip'], input[placeholder*='Postal']", zip_val),
+            ("Address",     "input[name*='address'], input[id*='address'], input[placeholder*='Address']", personal.address or location_val),
+            ("City",        "input[name*='city'], input[id*='city'], input[placeholder*='City']", personal.city or "San Francisco"),
+            ("State",       "input[name*='state'], input[id*='state'], input[placeholder*='State'], input[name*='region']", personal.state or "CA"),
+            ("Location",    "input[name='location'], input[id='location'], input[placeholder*='Location']", location_val),
         ]
 
-        for key, selector, value in ashby_fields:
-            if not value or key in results:
+        for label_name, selector, value in ashby_fields:
+            if not value or label_name.lower() in results:
                 continue
 
             try:
                 el = self.page.query_selector(selector)
                 if not el:
+                    key_term = label_name.lower().replace(" ", "_")
                     matched_selector = self.page.evaluate(r"""(k) => {
                         const searchTerm = k.replace(/_/g, ' ').toLowerCase();
                         const labels = document.querySelectorAll('label, [class*="field-label"], [class*="FieldLabel"]');
@@ -518,56 +466,53 @@ class AshbyHandler(GenericATSHandler):
                             }
                         }
                         return null;
-                    }""", key)
+                    }""", key_term)
                     if matched_selector:
                         el = self.page.query_selector(matched_selector)
                         selector = matched_selector
 
                 if el:
-                    print(f"✓ Human Filling {key}...")
+                    print(f"✓ Visibly Filling {label_name}...")
                     loc = self.page.locator(selector).first
-                    success = self.human_type_field(loc, value)
+                    success = self.filler.fill_field_visibly(loc, value, field_name=label_name)
                     if success:
-                        results[key] = True
-                        self.page.wait_for_timeout(800)
+                        results[label_name.lower()] = True
             except Exception as e:
-                print(f"ERROR while filling {key}: {e}")
-                results.setdefault(key, False)
+                print(f"ERROR while filling {label_name}: {e}")
+                results.setdefault(label_name.lower(), False)
 
-        # Location Combobox with Slow-Motion Glide
+        # Location Combobox with Visible Animation
         if location_val:
             print(f"\nSelecting location: {location_val}")
-            self.click_combobox("location", location_val)
+            self.filler.fill_combobox_visibly("location", location_val)
             self.click_combobox("where are you located", location_val)
-            self.page.wait_for_timeout(800)
 
         country = self.resume.personal.country or ""
         if country:
             print(f"\nSelecting country: {country}")
-            self.click_combobox("Which country do you intend to work from", country)
-            self.page.wait_for_timeout(800)
+            self.filler.fill_combobox_visibly("Which country do you intend to work from", country)
 
-        self.page.wait_for_timeout(800)  # Section delay
+        self.page.wait_for_timeout(600)  # Section delay
 
         # ── Section 3: Questions & Experience (Slow Motion Question-by-Question)
         print("\nRunning fill_yes_no_questions()...")
         yes_no_count = self.fill_yes_no_questions()
         print(f"Yes/No answered: {yes_no_count}")
-        self.page.wait_for_timeout(800)
+        self.page.wait_for_timeout(600)
 
         print("\nRunning fill_radio_questions()...")
         radio_count = self.fill_radio_questions()
         print(f"Radio questions answered: {radio_count}")
-        self.page.wait_for_timeout(800)
+        self.page.wait_for_timeout(600)
 
         # Hardcoded 'How did you hear about us?' → 'Company Website'
         self.fill_hear_about_us()
-        self.page.wait_for_timeout(800)
+        self.page.wait_for_timeout(600)
 
         print("\nRunning fill_paragraph_questions()...")
         paragraph_count = self.fill_paragraph_questions()
         print(f"Paragraphs filled: {paragraph_count}")
-        self.page.wait_for_timeout(800)
+        self.page.wait_for_timeout(600)
 
         # Fill any remaining unfilled textareas with slow motion
         default_bg = (
@@ -579,13 +524,19 @@ class AshbyHandler(GenericATSHandler):
                 val = ta.input_value()
                 if not val or not val.strip():
                     loc = self.page.locator("textarea").first
-                    self.human_type_field(loc, default_bg)
-                    self.page.wait_for_timeout(800)
+                    self.filler.fill_field_visibly(loc, default_bg, field_name="Additional Information")
             except Exception:
                 pass
 
-        print("\n✓ Autofill completed from first to last question!")
-        self.page.wait_for_timeout(2000)  # Keep visible 2 seconds before submit/review
+        # ── Final HUD state: All fields completed ✓ Ready for review ────────
+        self.filler.update_hud(
+            current_index=estimated_fields,
+            field_name="All Fields Completed ✓",
+            status="Application ready for review",
+            is_complete=True,
+        )
+        print("\n✓ Autofill completed from first to last question! Application ready for review.")
+        self.page.wait_for_timeout(2000)
 
         print("\n==================== ASHBY AUTOFILL END ====================\n")
 
