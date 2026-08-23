@@ -373,17 +373,14 @@ class AshbyHandler(GenericATSHandler):
 
         print("\n==================== ASHBY AUTOFILL - VISIBLE STEP-BY-STEP MODE ====================")
         self.filler = VisibleFormFiller(self.page, VisibleMotionConfig(
-            type_delay_ms=60,
-            field_start_pause_ms=400,
+            type_delay_ms=0,
+            field_start_pause_ms=300,
             field_complete_pause_ms=600,
             scroll_duration_ms=600,
-            scroll_settle_ms=400,
-            enable_hud=True,
+            scroll_settle_ms=300,
+            enable_hud=False,
         ))
 
-        # ── Estimate total applicable fields for HUD progress ───────────────
-        estimated_fields = 8
-        self.filler.inject_hud(total_fields=estimated_fields)
         self.smooth_glide_to_y(0, duration_ms=800)
         print("Parsing your resume... Autofilling key application fields with slow-motion visible pacing.")
         self.page.wait_for_timeout(1000)

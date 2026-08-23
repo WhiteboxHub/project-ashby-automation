@@ -23,12 +23,12 @@ from playwright.sync_api import Locator, Page
 @dataclass
 class VisibleMotionConfig:
     """Configuration for human-visible form filling animation."""
-    type_delay_ms: int = 60
-    field_start_pause_ms: int = 400
+    type_delay_ms: int = 0
+    field_start_pause_ms: int = 300
     field_complete_pause_ms: int = 600
     scroll_duration_ms: int = 600
-    scroll_settle_ms: int = 400
-    enable_hud: bool = True
+    scroll_settle_ms: int = 300
+    enable_hud: bool = False
 
 
 class VisibleFormFiller:
@@ -42,62 +42,9 @@ class VisibleFormFiller:
         self.current_field_name = ""
         self._hud_injected = False
 
-    # -------------------------------------------------------------------------
-    # On-Screen Live AutoFill HUD
-    # -------------------------------------------------------------------------
-
     def inject_hud(self, total_fields: int = 0) -> None:
-        """Inject or reset floating live HUD in the browser viewport."""
-        if not self.config.enable_hud:
-            return
-
-        self.total_fields = total_fields
-        self.current_field_index = 0
-
-        js = r"""(total) => {
-            let hud = document.getElementById('jobcli-autofill-hud');
-            if (!hud) {
-                hud = document.createElement('div');
-                hud.id = 'jobcli-autofill-hud';
-                hud.style.position = 'fixed';
-                hud.style.bottom = '24px';
-                hud.style.right = '24px';
-                hud.style.zIndex = '2147483647';
-                hud.style.width = '340px';
-                hud.style.padding = '14px 18px';
-                hud.style.borderRadius = '12px';
-                hud.style.background = 'rgba(15, 23, 42, 0.92)';
-                hud.style.backdropFilter = 'blur(12px)';
-                hud.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1)';
-                hud.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-                hud.style.color = '#f8fafc';
-                hud.style.transition = 'all 0.3s ease';
-                hud.style.pointerEvents = 'none';
-
-                hud.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <span id="jobcli-hud-pulse" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; box-shadow:0 0 8px #10b981;"></span>
-                            <span style="font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#94a3b8;">JobCLI AutoFill</span>
-                        </div>
-                        <span id="jobcli-hud-count" style="font-size:12px; font-weight:600; color:#cbd5e1;">0 / ${total || 0}</span>
-                    </div>
-                    <div style="margin-bottom:8px;">
-                        <div id="jobcli-hud-field" style="font-size:14px; font-weight:600; color:#ffffff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Initializing...</div>
-                        <div id="jobcli-hud-status" style="font-size:12px; color:#38bdf8; margin-top:2px;">Preparing form autofill...</div>
-                    </div>
-                    <div style="width:100%; height:5px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;">
-                        <div id="jobcli-hud-progress" style="width:0%; height:100%; background:linear-gradient(90deg, #3b82f6, #10b981); transition:width 0.4s ease;"></div>
-                    </div>
-                `;
-                document.body.appendChild(hud);
-            }
-        }"""
-        try:
-            self.page.evaluate(js, total_fields)
-            self._hud_injected = True
-        except Exception:
-            pass
+        """Disabled: no on-screen overlay HUD."""
+        return
 
     def update_hud(
         self,
@@ -107,71 +54,16 @@ class VisibleFormFiller:
         is_complete: bool = False,
         is_manual: bool = False,
     ) -> None:
-        """Update floating HUD content and progress bar."""
-        if not self.config.enable_hud:
-            return
-
-        self.current_field_index = current_index
-        self.current_field_name = field_name
-
-        js = r"""(data) => {
-            const countEl = document.getElementById('jobcli-hud-count');
-            const fieldEl = document.getElementById('jobcli-hud-field');
-            const statusEl = document.getElementById('jobcli-hud-status');
-            const progEl = document.getElementById('jobcli-hud-progress');
-            const pulseEl = document.getElementById('jobcli-hud-pulse');
-
-            if (!fieldEl) return;
-
-            if (countEl) countEl.innerText = `${data.index} / ${data.total || data.index}`;
-            fieldEl.innerText = data.fieldName || 'Form Field';
-            if (statusEl) {
-                statusEl.innerText = data.status;
-                if (data.isManual) {
-                    statusEl.style.color = '#f59e0b';
-                } else if (data.isComplete) {
-                    statusEl.style.color = '#10b981';
-                } else {
-                    statusEl.style.color = '#38bdf8';
-                }
-            }
-
-            if (pulseEl) {
-                if (data.isManual) {
-                    pulseEl.style.background = '#f59e0b';
-                    pulseEl.style.boxShadow = '0 0 8px #f59e0b';
-                } else if (data.isComplete) {
-                    pulseEl.style.background = '#10b981';
-                    pulseEl.style.boxShadow = '0 0 8px #10b981';
-                } else {
-                    pulseEl.style.background = '#3b82f6';
-                    pulseEl.style.boxShadow = '0 0 8px #3b82f6';
-                }
-            }
-
-            if (progEl && data.total > 0) {
-                const pct = Math.min(100, Math.round((data.index / data.total) * 100));
-                progEl.style.width = pct + '%';
-            }
-        }"""
-        try:
-            self.page.evaluate(js, {
-                "index": current_index,
-                "total": self.total_fields,
-                "fieldName": field_name,
-                "status": status,
-                "isComplete": is_complete,
-                "isManual": is_manual,
-            })
-        except Exception:
-            pass
+        """Disabled: no on-screen overlay HUD."""
+        return
 
     def remove_hud(self) -> None:
-        """Remove floating HUD overlay from DOM."""
+        """Remove floating HUD overlay from DOM if any exists."""
         try:
             self.page.evaluate("() => { const el = document.getElementById('jobcli-autofill-hud'); if (el) el.remove(); }")
             self._hud_injected = False
         except Exception:
+            pass
             pass
 
     # -------------------------------------------------------------------------
@@ -324,24 +216,16 @@ class VisibleFormFiller:
             locator.focus(timeout=1500)
             self.page.wait_for_timeout(self.config.field_start_pause_ms)
 
-            # 3. Clear existing value
-            locator.fill("")
+            # 3. Clean, reliable direct fill
+            locator.fill(value)
 
-            # 4. Type character-by-character with natural cadence
-            for char in value:
-                locator.type(char, delay=random.randint(
-                    max(25, self.config.type_delay_ms - 15),
-                    self.config.type_delay_ms + 15
-                ))
-
-            # 5. Dispatch input & change events for React/Angular bindings
+            # 4. Dispatch input & change events for React/Angular bindings
             locator.evaluate("""el => {
                 el.dispatchEvent(new Event('input', { bubbles: true }));
                 el.dispatchEvent(new Event('change', { bubbles: true }));
             }""")
 
-            # 6. Flash green completed state & pause
-            self.update_hud(idx, field_name, "✓ Completed", is_complete=True)
+            # 5. Flash green completed state & pause
             self.highlight_completed(locator)
             return True
 
