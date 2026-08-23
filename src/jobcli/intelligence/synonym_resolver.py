@@ -687,12 +687,19 @@ class ResumeAutoDetector:
                 low_sg = {k.lower(): v for k, v in skill_group.items()}
                 keywords = low_sg.get("keywords", [])
                 if isinstance(keywords, list):
-                    skills.extend(keywords)
+                    for kw in keywords:
+                        if isinstance(kw, str) and kw.strip():
+                            skills.append(kw.strip())
+                        elif kw:
+                            skills.append(str(kw).strip())
                 name = low_sg.get("name", "")
-                if name and name not in skills:
-                    skills.append(name)
+                if name and str(name).strip() not in skills:
+                    skills.append(str(name).strip())
             elif isinstance(skill_group, str):
-                skills.append(skill_group)
+                if skill_group.strip():
+                    skills.append(skill_group.strip())
+            elif skill_group is not None:
+                skills.append(str(skill_group).strip())
 
         # Certifications
         certifications = []

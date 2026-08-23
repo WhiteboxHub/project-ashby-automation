@@ -1486,17 +1486,24 @@ class ApplicationEngine:
             # sites that land directly on the form without an Apply button).
             page_already_has_form = False
             try:
-                visible_inputs = page.locator(
-                    "input[type='text']:visible, input[type='email']:visible, "
-                    "input[type='tel']:visible, select:visible, textarea:visible"
-                ).count()
-                if visible_inputs >= 2:
+                current_url = (page.url or "").lower()
+                if "/application" in current_url or "/apply" in current_url or "ashbyhq.com" in current_url:
                     page_already_has_form = True
                     logger.info(
-                        f"Detected {visible_inputs} visible form fields — "
-                        f"skipping Apply button search, page is already a form.",
+                        f"Direct application URL detected ({current_url[:60]}) — proceeding directly to form fill.",
                         phase=ExecutionPhase.RULES,
                     )
+                else:
+                    visible_inputs = page.locator(
+                        "input:not([type='hidden']):not([type='submit']), select, textarea, [class*='application-form']"
+                    ).count()
+                    if visible_inputs >= 1:
+                        page_already_has_form = True
+                        logger.info(
+                            f"Detected {visible_inputs} form fields — "
+                            f"skipping Apply button search, page is already a form.",
+                            phase=ExecutionPhase.RULES,
+                        )
             except Exception:
                 pass
             if page_already_has_form:
@@ -1664,14 +1671,11 @@ class ApplicationEngine:
             # On success: if human manually filled any fields, give a 2s window
             # so they can see the confirmation page; otherwise a 1s flash is fine.
             if not self.config.headless:
-                if not success:
-                    agent.final_browser_pause()
-                elif state.human_fields > 0:
-                    # Human was involved — show a brief countdown before moving on
-                    agent.final_browser_pause()
+                if success:
+                    # Fully automated submission success — brief 1.5s view of success screen, then advance to next job
+                    page.wait_for_timeout(1500)
                 else:
-                    # Fully automated — just a quick 1s flash, keep the batch moving
-                    page.wait_for_timeout(1000)
+                    agent.final_browser_pause()
 
             # ── 7. Populate field-ownership counters on state ────────
             # These are read by cli/main.py → tracker.add_application()
@@ -2714,52 +2718,71 @@ class ApplicationEngine:
                 if skip_llm or state.detected_ats == ATSType.ASHBY:
                     agent.show_phase_banner(f"Hybrid Extension + Playwright Automation ({state.detected_ats.value} - No LLM)")
                     if rules_handler:
-                        rules_handler.fill_form(getattr(self.resume, "pdf_path", None))
+                        pdf_to_use = resume_pdf_path or getattr(self, "resume_pdf_path", None)
+                        if not pdf_to_use:
+                            try:
+                                from jobcli.storage.repositories import UserRepository
+                                user_repo = UserRepository(self.session)
+                                user_data = user_repo.get_user_data()
+                                if user_data and getattr(user_data, "pdf_path", None):
+                                    pdf_to_use = user_data.pdf_path
+                            except Exception:
+                                pass
+                        rules_handler.fill_form(pdf_to_use)
 
-                    # ── Human review gate ───────────────────────────────────
-                    # Pause here so the human can check every field, correct
-                    # mismatches, and fill anything the rules left blank.
-                    # Only fires after ENTER + 2-second countdown.
-                    agent.pause_for_form_review()
+                    # ── Check for missing required fields or validation errors ────
+                    missing_fields = []
+                    if hasattr(rules_handler, "has_unfilled_required_fields"):
+                        missing_fields = rules_handler.has_unfilled_required_fields()
+
+                    has_errors = False
+                    if hasattr(rules_handler, "has_validation_errors"):
+                        has_errors = rules_handler.has_validation_errors()
+
+                    if missing_fields or has_errors:
+                        missing_summary = ", ".join(missing_fields[:3]) if missing_fields else "required fields"
+                        agent.show_warning(f"Manual input needed for: {missing_summary}")
+                        agent.pause_for_form_review()
+                    else:
+                        logger.info(
+                            "All required fields filled cleanly — auto-submitting application.",
+                            phase=ExecutionPhase.RULES,
+                        )
 
                     # ── Submit automatically with validation-error retry loop ──
                     if rules_handler:
-                        max_submit_attempts = 5
+                        max_submit_attempts = 3
                         for attempt in range(1, max_submit_attempts + 1):
                             submitted = rules_handler.submit_application()
                             if submitted:
                                 agent.show_success(
-                                    f"{state.detected_ats.value} application submitted "
-                                    "via Extension + Rules."
+                                    f"{state.detected_ats.value} application submitted successfully! Advancing to next job..."
                                 )
                                 logger.info(
-                                    f"{state.detected_ats.value} application completed "
-                                    "via Extension + Playwright",
+                                    f"{state.detected_ats.value} application completed successfully.",
                                     phase=ExecutionPhase.RULES,
                                 )
                                 break
                             else:
-                                # Validation errors still on screen — pause for human fix
-                                from rich.panel import Panel
-                                agent.console.print(
-                                    Panel(
-                                        f"[bold red]Validation errors detected "
-                                        f"(attempt {attempt}/{max_submit_attempts}).[/bold red]\n\n"
-                                        "  [yellow]→[/yellow] Fix the highlighted fields in the browser\n"
-                                        "  [yellow]→[/yellow] Then press [bold green]ENTER[/bold green] "
-                                        "to retry submission",
-                                        title="[bold red]>>> VALIDATION ERRORS — FIX & RETRY <<<[/bold red]",
-                                        border_style="red",
+                                if attempt < max_submit_attempts:
+                                    from rich.panel import Panel
+                                    agent.console.print(
+                                        Panel(
+                                            f"[bold red]Validation errors detected on submission (attempt {attempt}/{max_submit_attempts}).[/bold red]\n\n"
+                                            "  [yellow]→[/yellow] Please complete the missing/highlighted fields in Chrome\n"
+                                            "  [yellow]→[/yellow] Press [bold green]ENTER[/bold green] to retry submission",
+                                            title="[bold red]>>> ACTION REQUIRED — COMPLETE MISSING FIELDS <<<[/bold red]",
+                                            border_style="red",
+                                        )
                                     )
-                                )
-                                try:
-                                    agent._get_user_input(
-                                        "  [yellow]Press ENTER to retry submit →[/yellow] ",
-                                        timeout_seconds=None,
-                                        default="",
-                                    )
-                                except Exception:
-                                    pass
+                                    try:
+                                        agent._get_user_input(
+                                            "  [yellow]Press ENTER when ready to submit →[/yellow] ",
+                                            timeout_seconds=None,
+                                            default="",
+                                        )
+                                    except Exception:
+                                        pass
                     return True
 
                 if self._last_extension_filled_count == 0:
@@ -4239,20 +4262,9 @@ class ApplicationEngine:
                 logger.log_phase_end(ExecutionPhase.LLM, False)
                 return False
 
-            # ── Compulsory pre-submit human review (Phase 4/4) ────────────
-            # The form is "ready" from the agent's perspective — every
-            # signal we have says it can submit. But the user has asked
-            # for a mandatory human review before any application leaves
-            # the browser, in EVERY interaction mode including AUTO.
-            # _handoff_human_in_loop is invoked with force_block=True so
-            # the AUTO short-circuit in handoff_to_human is bypassed.
+            # ── Auto-submit when form is fully filled cleanly ─────────────
             self._form_ready_for_submit = True
 
-            # Snapshot pre-submit state BEFORE the handoff so the
-            # post-handoff confirmation detector compares against the
-            # form the agent left, not the form after the human touched
-            # it. URL change and submit-button disappearance are the two
-            # most reliable signals that the form was accepted.
             try:
                 _pre_submit_url = page.url or ""
             except Exception:
@@ -4262,33 +4274,31 @@ class ApplicationEngine:
             except Exception:
                 _pre_submit_had_submit_btn = True
 
-            review_handoff = self._handoff_human_in_loop(
-                agent, logger, state,
-                reason=(
-                    "Final review — check the form in the browser. "
-                    "Press ENTER to submit this application."
-                ),
-                hint=(
-                    "Type skip + ENTER to skip this job and open the next one. "
-                    "Type cancel + ENTER to abort. "
-                    "If you already submitted in the browser, JobCLI detects "
-                    "the confirmation page automatically."
-                ),
-                force_block=True,
-                submission_checker=lambda: self._looks_like_confirmation(
-                    agent.page, _pre_submit_url, _pre_submit_had_submit_btn
-                ),
-            )
-            if self._handoff_skipped_job(review_handoff, agent, logger, ExecutionPhase.LLM):
-                logger.log_phase_end(ExecutionPhase.LLM, False)
-                return False
-            if review_handoff.cancelled:
-                agent.show_warning("Submission cancelled by user during review.")
-                self._submit_declined_by_user = True
-                logger.log_phase_end(ExecutionPhase.LLM, False)
-                return False
-            page = review_handoff.page
-            agent.page = page
+            # If there are any blockers/errors, prompt candidate; otherwise proceed directly to submit!
+            if blockers or visible_errors:
+                review_handoff = self._handoff_human_in_loop(
+                    agent, logger, state,
+                    reason=(
+                        "Manual input required — complete the highlighted missing fields."
+                    ),
+                    hint=(
+                        "Finish the missing fields in the browser, then press ENTER to submit."
+                    ),
+                    force_block=True,
+                    submission_checker=lambda: self._looks_like_confirmation(
+                        agent.page, _pre_submit_url, _pre_submit_had_submit_btn
+                    ),
+                )
+                if self._handoff_skipped_job(review_handoff, agent, logger, ExecutionPhase.LLM):
+                    logger.log_phase_end(ExecutionPhase.LLM, False)
+                    return False
+                if review_handoff.cancelled:
+                    agent.show_warning("Submission cancelled by user during review.")
+                    self._submit_declined_by_user = True
+                    logger.log_phase_end(ExecutionPhase.LLM, False)
+                    return False
+                page = review_handoff.page
+                agent.page = page
 
             # ── Detect: did the user click Submit themselves? ─────────────
             # If the page already looks like a confirmation (URL changed
